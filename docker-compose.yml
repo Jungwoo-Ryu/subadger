@@ -1,0 +1,6 @@
+services:
+  app:
+    image: thugken/subadger:latest
+    ports:
+      - "8000:8000"
+    restart: unless-stopped
