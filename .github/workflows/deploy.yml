@@ -35,7 +35,10 @@ jobs:
 
       - name: Deploy to VM
         run: |
-          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no ${{ secrets.VM_USERNAME }}@${{ secrets.VM_HOST }} "
+          ssh -i ~/.ssh/deploy_key \
+            -o StrictHostKeyChecking=no \
+            -o IdentitiesOnly=yes \
+            ${{ secrets.VM_USERNAME }}@${{ secrets.VM_HOST }} "
             cd ~/subadger &&
             docker compose pull &&
             docker compose up -d &&
