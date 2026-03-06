@@ -1,9 +1,6 @@
 services:
-  api:
+  app:
     image: thugken/subadger:latest
-    container_name: subadger-api
-    restart: always
     ports:
       - "8000:8000"
-    env_file:
-      - .env
+    restart: unless-stopped
