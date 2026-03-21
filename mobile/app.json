@@ -1,0 +1,25 @@
+{
+  "expo": {
+    "name": "Swip Lease",
+    "slug": "subadger-mobile",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "splash": {
+      "resizeMode": "contain",
+      "backgroundColor": "#B91C1C"
+    },
+    "assetBundlePatterns": ["**/*"],
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "com.likelion.subadger"
+    },
+    "android": {
+      "adaptiveIcon": {
+        "backgroundColor": "#B91C1C"
+      },
+      "package": "com.likelion.subadger"
+    },
+    "scheme": "subadger"
+  }
+}

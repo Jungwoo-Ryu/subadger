@@ -26,14 +26,19 @@ uvicorn main:app --reload --host 0.0.0.0 --port 8000
 
 ## 모바일 (Expo)
 
-[`mobile/README.md`](mobile/README.md) 를 보고 Expo 프로젝트를 생성한 뒤:
+[`mobile/README.md`](mobile/README.md) 참고.
 
 ```bash
 cd mobile
+npm install
 npx expo start
 ```
 
-또는 루트: `npm run mobile` (Expo 프로젝트가 준비된 경우)
+또는 루트: `npm run mobile`
+
+**실기기(Expo Go):** `mobile/app.config.js`가 PC의 LAN IP로 API URL을 자동 설정합니다(`EXPO_PUBLIC_API_URL` 미설정 시). 맥 방화벽에서 8000 허용, 백엔드는 `npm run api`(`0.0.0.0`).
+
+데모 유저·피드 데이터: [`docs/DEMO_MOBILE.md`](docs/DEMO_MOBILE.md)
 
 ## DB (Supabase Postgres)
 

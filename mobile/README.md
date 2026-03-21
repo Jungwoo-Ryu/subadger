@@ -1,35 +1,21 @@
-# Subadger — React Native (Expo)
-
-모노레포의 모바일 앱 디렉터리입니다. 아직 프로젝트가 없다면 **저장소 루트**에서 한 번만 생성하세요.
-
-## 새 Expo 앱 생성 (이 폴더가 비어 있을 때)
-
-```bash
-cd /path/to/subadger
-npx create-expo-app@latest mobile --template blank-typescript
-```
-
-이미 `mobile/`에 파일이 있다면, 대신 빈 폴더를 만들고 그 안에서:
-
-```bash
-cd mobile
-npx create-expo-app@latest . --template blank-typescript
-```
+# subadger-mobile (Expo)
 
 ## 실행
 
 ```bash
-cd mobile
+npm install
 npx expo start
 ```
 
-## 환경 변수
+루트에서: `npm run mobile`
 
-- `EXPO_PUBLIC_SUPABASE_URL` — Supabase Project URL  
-- `EXPO_PUBLIC_SUPABASE_ANON_KEY` — anon public key (클라이언트용)
+## API 주소 (실기기 Expo Go)
 
-**service_role / DB 비밀번호는 앱에 넣지 마세요.**
+- `EXPO_PUBLIC_API_URL`을 **설정하지 않으면** `app.config.js`가 Metro를 실행하는 맥의 **LAN IPv4**로 `http://<ip>:8000`을 자동 넣습니다. 폰과 맥이 **같은 Wi‑Fi**에 있어야 합니다.
+- 시뮬레이터만 쓸 때는 `mobile/.env`에 `EXPO_PUBLIC_API_URL=http://127.0.0.1:8000` 을 넣으세요.
 
-## 백엔드
+백엔드는 반드시 `0.0.0.0:8000`에 떠 있어야 합니다 (`npm run api`).
 
-FastAPI는 `../backend` — 로컬에서 `http://127.0.0.1:8000` (또는 LAN IP) 로 호출합니다.
+## 로그인
+
+Supabase Auth에 등록한 이메일·비밀번호 (예: `system` / `system` → 서버에서 `system@wisc.edu`로 정규화).
