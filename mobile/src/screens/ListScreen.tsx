@@ -3,7 +3,7 @@ import { View, Text, StyleSheet, FlatList, Image } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { colors, radii, space, type as t } from "../theme";
-import { fetchFeed, getFallbackUserId, type FeedListing } from "../api";
+import { DUMMY_LISTINGS, fetchFeed, getFallbackUserId, type FeedListing } from "../api";
 import { useAuth } from "../context/AuthContext";
 
 export function ListScreen() {
@@ -12,8 +12,13 @@ export function ListScreen() {
   const [items, setItems] = useState<FeedListing[]>([]);
 
   useEffect(() => {
-    if (!userId) return;
-    fetchFeed(userId).then(setItems).catch(() => setItems([]));
+    if (!userId) {
+      setItems(DUMMY_LISTINGS);
+      return;
+    }
+    fetchFeed(userId)
+      .then((data) => setItems(data.length ? data : DUMMY_LISTINGS))
+      .catch(() => setItems(DUMMY_LISTINGS));
   }, [userId]);
 
   return (
