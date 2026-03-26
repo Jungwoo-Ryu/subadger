@@ -41,7 +41,7 @@ npx expo start
 - **Supabase CLI:** `supabase db push` (권장)
 - **FastAPI:** `DATABASE_URL` 설정. `public.profiles`가 없을 때만 `psql`로 부트스트랩. 운영에서는 `SKIP_SCHEMA_INIT=1` 권장.
 
-[`.env.example`](.env.example) 을 복사해 `.env` 로 사용하세요.
+루트 `.env`를 사용하세요. 백엔드는 저장소 루트의 `.env`를 자동으로 읽습니다.
 
 ## Docker
 
