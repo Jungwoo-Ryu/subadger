@@ -1,0 +1,17 @@
+{
+  "expo": {
+    "name": "SubLease Match",
+    "slug": "sublease-matching-app",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.sublease.matchingapp"
+    },
+    "android": {
+      "package": "com.sublease.matchingapp"
+    },
+    "plugins": []
+  }
+}
