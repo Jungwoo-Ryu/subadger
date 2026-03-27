@@ -1,5 +1,7 @@
-import React, { useState, useCallback, useRef, useImperativeHandle, forwardRef } from 'react';
+import React, { useState, useCallback, useRef, useImperativeHandle, forwardRef, useEffect } from 'react';
 import {
+  ActivityIndicator,
+  Alert,
   StyleSheet,
   View,
   Text,
@@ -28,6 +30,9 @@ import {
 import RoleSelectionScreen from './src/screens/RoleSelectionScreen';
 import SeekerAuthScreen from './src/screens/SeekerAuthScreen';
 import OwnerAuthScreen from './src/screens/OwnerAuthScreen';
+import { type AuthRole, type AuthUser, mapSupabaseUser, signOut as signOutUser } from './src/lib/auth';
+import { ensureProfileRecord } from './src/lib/profile';
+import { supabase } from './src/lib/supabase';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 const CARD_WIDTH = SCREEN_WIDTH;
@@ -36,15 +41,8 @@ const CARD_HEIGHT = SCREEN_HEIGHT - TAB_BAR_HEIGHT - 12;
 const SWIPE_THRESHOLD = SCREEN_WIDTH * 0.3;
 
 // ─── Auth types ──────────────────────────────────────────────────────────────
-type UserRole = 'seeker' | 'owner';
 type AuthScreen = 'role-select' | 'seeker-auth' | 'owner-auth' | 'dashboard';
 type DashboardTab = 'explore' | 'likes' | 'chat' | 'profile';
-
-interface AuthUser {
-  name: string;
-  email: string;
-  role: UserRole;
-}
 
 // ─── Colour tokens ────────────────────────────────────────────────────────────
 const COLORS = {
@@ -649,13 +647,31 @@ const SwipeCard = forwardRef<SwipeCardRef, SwipeCardProps>(({ index, onSwipedLef
 });
 
 // ─── Dashboard Header (with logout) ──────────────────────────────────────────
-function DashboardHeader({ user, onLogout }: { user: AuthUser; onLogout: () => void }) {
+function DashboardHeader({ onLogout, isLoggingOut }: { onLogout: () => void; isLoggingOut: boolean }) {
   return (
     <View style={styles.header}>
       <View />
-      <TouchableOpacity style={styles.logoutBtn} onPress={onLogout} activeOpacity={0.8}>
-        <Ionicons name="log-out-outline" size={20} color="#FFF" />
+      <TouchableOpacity
+        style={styles.logoutBtn}
+        onPress={onLogout}
+        activeOpacity={0.8}
+        disabled={isLoggingOut}
+      >
+        {isLoggingOut ? (
+          <ActivityIndicator color="#FFF" size="small" />
+        ) : (
+          <Ionicons name="log-out-outline" size={20} color="#FFF" />
+        )}
       </TouchableOpacity>
+    </View>
+  );
+}
+
+function LoadingScreen({ label }: { label: string }) {
+  return (
+    <View style={styles.loadingScreen}>
+      <ActivityIndicator size="large" color={COLORS.primary} />
+      <Text style={styles.loadingText}>{label}</Text>
     </View>
   );
 }
@@ -704,6 +720,10 @@ export default function App() {
   // Auth state
   const [authScreen, setAuthScreen] = useState<AuthScreen>('role-select');
   const [currentUser, setCurrentUser] = useState<AuthUser | null>(null);
+  const [isAuthReady, setIsAuthReady] = useState(false);
+  const [isLoggingOut, setIsLoggingOut] = useState(false);
+  const selectedRoleRef = useRef<AuthRole>('seeker');
+  const bootstrappedProfileUserIdRef = useRef<string | null>(null);
 
   // Dashboard state
   const [properties, setProperties] = useState<Property[]>([...MOCK_PROPERTIES]);
@@ -718,6 +738,125 @@ export default function App() {
 
   // Ref for imperative swipe from action buttons
   const topCardRef = useRef<SwipeCardRef>(null);
+
+  const resetDashboardState = useCallback(() => {
+    setActiveTab('explore');
+    setProperties([...MOCK_PROPERTIES]);
+    setSeekers([...MOCK_SEEKER_CARDS]);
+  }, []);
+
+  const applyAuthenticatedUser = useCallback(
+    (user: AuthUser, resetDecks = true) => {
+      selectedRoleRef.current = user.role;
+      setCurrentUser(user);
+      setAuthScreen('dashboard');
+
+      if (resetDecks) {
+        resetDashboardState();
+      }
+    },
+    [resetDashboardState],
+  );
+
+  useEffect(() => {
+    let isMounted = true;
+
+    const handleSignedOut = () => {
+      if (!isMounted) {
+        return;
+      }
+
+      setCurrentUser(null);
+      setAuthScreen('role-select');
+      setActiveTab('explore');
+      setDetailPropertyVisible(false);
+      setDetailSeekerVisible(false);
+    };
+
+    const restoreSession = async () => {
+      if (!supabase) {
+        if (isMounted) {
+          setIsAuthReady(true);
+        }
+        return;
+      }
+
+      try {
+        const { data, error } = await supabase.auth.getSession();
+
+        if (error) {
+          throw error;
+        }
+
+        if (!isMounted) {
+          return;
+        }
+
+        if (data.session?.user) {
+          applyAuthenticatedUser(
+            mapSupabaseUser(data.session.user, selectedRoleRef.current),
+            false,
+          );
+        } else {
+          handleSignedOut();
+        }
+      } catch (error) {
+        console.warn('Failed to restore auth session', error);
+        handleSignedOut();
+      } finally {
+        if (isMounted) {
+          setIsAuthReady(true);
+        }
+      }
+    };
+
+    restoreSession();
+
+    if (!supabase) {
+      return () => {
+        isMounted = false;
+      };
+    }
+
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (!isMounted) {
+        return;
+      }
+
+      if (session?.user) {
+        applyAuthenticatedUser(
+          mapSupabaseUser(session.user, selectedRoleRef.current),
+          false,
+        );
+      } else {
+        handleSignedOut();
+      }
+    });
+
+    return () => {
+      isMounted = false;
+      subscription.unsubscribe();
+    };
+  }, [applyAuthenticatedUser]);
+
+  useEffect(() => {
+    if (!currentUser) {
+      bootstrappedProfileUserIdRef.current = null;
+      return;
+    }
+
+    if (bootstrappedProfileUserIdRef.current === currentUser.id) {
+      return;
+    }
+
+    bootstrappedProfileUserIdRef.current = currentUser.id;
+
+    ensureProfileRecord(currentUser).catch((error) => {
+      console.warn('Failed to ensure app profile record', error);
+    });
+  }, [currentUser]);
 
   const showPropertyDetail = (property: Property) => {
     setDetailProperty(property);
@@ -739,29 +878,37 @@ export default function App() {
 
   // ─── Auth handlers ───────────────────────────────────────────────────────
   const handleSelectRole = (role: 'seeker' | 'owner') => {
+    selectedRoleRef.current = role;
     setAuthScreen(role === 'seeker' ? 'seeker-auth' : 'owner-auth');
   };
 
-  const handleLogin = (role: UserRole) => (name: string, email: string) => {
-    setCurrentUser({ name, email, role });
-    setAuthScreen('dashboard');
-    setActiveTab('explore');
-    // Reset decks
-    setProperties([...MOCK_PROPERTIES]);
-    setSeekers([...MOCK_SEEKER_CARDS]);
+  const handleAuthenticated = (user: AuthUser) => {
+    applyAuthenticatedUser(user);
   };
 
   const handleBackToRoleSelect = () => {
     setAuthScreen('role-select');
   };
 
-  const handleLogout = () => {
-    setCurrentUser(null);
-    setAuthScreen('role-select');
-    setActiveTab('explore');
+  const handleLogout = async () => {
+    try {
+      setIsLoggingOut(true);
+      await signOutUser();
+    } catch (error) {
+      Alert.alert(
+        'Logout failed',
+        error instanceof Error ? error.message : 'Please try again.',
+      );
+    } finally {
+      setIsLoggingOut(false);
+    }
   };
 
   // ─── Auth screens ────────────────────────────────────────────────────────
+  if (!isAuthReady) {
+    return <LoadingScreen label="Checking your session..." />;
+  }
+
   if (authScreen === 'role-select') {
     return <RoleSelectionScreen onSelectRole={handleSelectRole} />;
   }
@@ -769,7 +916,7 @@ export default function App() {
   if (authScreen === 'seeker-auth') {
     return (
       <SeekerAuthScreen
-        onLogin={handleLogin('seeker')}
+        onAuthenticated={handleAuthenticated}
         onBack={handleBackToRoleSelect}
       />
     );
@@ -778,14 +925,16 @@ export default function App() {
   if (authScreen === 'owner-auth') {
     return (
       <OwnerAuthScreen
-        onLogin={handleLogin('owner')}
+        onAuthenticated={handleAuthenticated}
         onBack={handleBackToRoleSelect}
       />
     );
   }
 
   // ─── Dashboard ───────────────────────────────────────────────────────────
-  if (!currentUser) return null;
+  if (!currentUser) {
+    return <LoadingScreen label="Loading your account..." />;
+  }
 
   const mode: AppMode = currentUser.role === 'seeker' ? 'seeker' : 'host';
   const currentDeck = mode === 'seeker' ? properties : seekers;
@@ -889,7 +1038,7 @@ export default function App() {
     <View style={{ flex: 1, backgroundColor: '#000' }}>
       <StatusBar barStyle="light-content" backgroundColor="#000" />
       <View style={styles.container}>
-        <DashboardHeader user={currentUser} onLogout={handleLogout} />
+        <DashboardHeader onLogout={handleLogout} isLoggingOut={isLoggingOut} />
 
         {renderTabContent()}
 
@@ -939,6 +1088,18 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#000',
+  },
+  loadingScreen: {
+    flex: 1,
+    backgroundColor: '#FFF',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 12,
+  },
+  loadingText: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#444',
   },
 
   // Header (just logout button, overlaid on the card)
