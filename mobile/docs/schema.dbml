@@ -1,0 +1,252 @@
+Project Roomie_Sublease_App {
+  database_type: "PostgreSQL"
+  Note: '''
+  Tinder-like sublease swipe app.
+  Users can switch between seeker and host modes.
+  Supports bidirectional swipes, matches, chat, saved listings, and super likes.
+  '''
+}
+
+Enum gender_type {
+  Male
+  Female
+  Other
+  Any
+}
+
+Enum app_mode {
+  seeker
+  host
+}
+
+Enum swipe_target_type {
+  property
+  seeker
+}
+
+Enum swipe_action_type {
+  like
+  pass
+  save
+  super_like
+}
+
+Enum room_type_enum {
+  Studio
+  One_Bedroom
+  Shared
+  Two_Bedroom_Plus
+}
+
+Enum furnished_type {
+  Furnished
+  Unfurnished
+  Partial
+}
+
+Enum lifestyle_type {
+  Morning
+  Night
+  Flexible
+}
+
+Table users {
+  id uuid [pk, not null, note: 'Supabase Auth user id']
+  school_email varchar [not null, unique, note: 'School email for verification']
+  is_school_verified boolean [not null, default: false]
+
+  name varchar [not null]
+  nickname varchar
+  gender gender_type [not null]
+  profile_image_url text
+  bio text
+
+  grade varchar [note: 'Optional: freshman, sophomore, etc.']
+  affiliation varchar [note: 'Optional: department / school / organization']
+
+  current_app_mode app_mode [not null, default: 'seeker']
+
+  daily_like_limit int [not null, default: 20]
+  likes_used_today int [not null, default: 0]
+  last_like_date date [default: `CURRENT_DATE`]
+
+  daily_super_like_limit int [not null, default: 1]
+  super_likes_used_today int [not null, default: 0]
+  last_super_like_date date [default: `CURRENT_DATE`]
+
+  smoking boolean [note: 'Optional user lifestyle info']
+  has_pet boolean [note: 'Optional user lifestyle info']
+  lifestyle lifestyle_type [note: 'Morning / Night / Flexible']
+
+  profile_completeness int [default: 0, note: '0~100']
+
+  created_at timestamptz [not null, default: `now()`]
+}
+
+Table seeker_profiles {
+  id uuid [pk, not null]
+  user_id uuid [not null, unique]
+
+  target_price_min int [default: 0]
+  target_price_max int [not null]
+
+  desired_start_date date [not null]
+  desired_end_date date [not null]
+
+  preferred_gender gender_type [not null, default: 'Any']
+  preferred_neighborhood varchar
+  max_distance_miles decimal(5,2)
+
+  preferred_room_type room_type_enum
+  furnished_preference furnished_type
+
+  budget_includes_utilities boolean [default: false]
+
+  is_active boolean [not null, default: true]
+  created_at timestamptz [not null, default: `now()`]
+
+  Note: 'One active seeker profile per user in current design'
+}
+
+Table properties {
+  id uuid [pk, not null]
+  host_id uuid [not null]
+
+  apartment_name varchar [not null]
+  address text [not null]
+  neighborhood varchar
+  distance_to_campus_miles decimal(5,2)
+
+  description text
+
+  original_rent_price int [not null]
+  sublet_price int [not null]
+  avg_utility_fee int [not null, default: 0]
+  deposit_amount int [default: 0]
+  application_fee int [default: 0]
+
+  available_start_date date [not null]
+  available_end_date date [not null]
+
+  room_type room_type_enum [not null]
+  furnished furnished_type [not null, default: 'Unfurnished']
+
+  preferred_gender gender_type [not null, default: 'Any']
+
+  roommate_info text
+  floor_plan_url text
+
+  is_active boolean [not null, default: true]
+  created_at timestamptz [not null, default: `now()`]
+}
+
+Table property_photos {
+  id uuid [pk, not null]
+  property_id uuid [not null]
+  photo_url text [not null]
+  display_order int [not null, default: 1]
+  created_at timestamptz [not null, default: `now()`]
+
+  Note: 'Recommended instead of storing image_urls as array for ordering and extensibility'
+}
+
+Table property_amenities {
+  id uuid [pk, not null]
+  property_id uuid [not null]
+  amenity_name varchar [not null, note: 'gym, laundry in-unit, parking, pet-friendly, AC/heat, etc.']
+}
+
+Table property_rules {
+  id uuid [pk, not null]
+  property_id uuid [not null]
+  rule_name varchar [not null, note: 'no smoking, no pets, quiet hours, etc.']
+}
+
+Table swipes {
+  id uuid [pk, not null]
+  swiper_id uuid [not null]
+
+  target_type swipe_target_type [not null]
+  target_property_id uuid
+  target_seeker_id uuid
+
+  action swipe_action_type [not null, note: 'like, pass, save, super_like']
+  message text [note: 'Optional short note for super like / offer']
+  created_at timestamptz [not null, default: `now()`]
+
+  Note: '''
+  Polymorphic target:
+  - if target_type = property, target_property_id is used
+  - if target_type = seeker, target_seeker_id is used
+  In SQL, add a check constraint for consistency.
+  '''
+}
+
+Table matches {
+  id uuid [pk, not null]
+  property_id uuid [not null]
+  seeker_id uuid [not null, note: 'users.id of seeker']
+  created_at timestamptz [not null, default: `now()`]
+
+  Note: 'Created automatically when both sides like each other'
+}
+
+Table messages {
+  id uuid [pk, not null]
+  match_id uuid [not null]
+  sender_id uuid [not null]
+  content text [not null]
+  image_url text [note: 'Optional image attachment']
+  created_at timestamptz [not null, default: `now()`]
+}
+
+Table user_preferences {
+  id uuid [pk, not null]
+  user_id uuid [not null, unique]
+
+  min_budget int
+  max_budget int
+
+  move_in_start date
+  move_out_end date
+
+  preferred_neighborhood varchar
+  max_distance_miles decimal(5,2)
+
+  preferred_room_type room_type_enum
+  furnished_preference furnished_type
+  preferred_gender gender_type [default: 'Any']
+
+  wants_gym boolean [default: false]
+  wants_laundry_in_unit boolean [default: false]
+  wants_parking boolean [default: false]
+  pet_friendly_only boolean [default: false]
+  needs_ac_heat boolean [default: false]
+
+  no_smoking_only boolean [default: false]
+  no_pets_only boolean [default: false]
+  quiet_hours_only boolean [default: false]
+
+  sort_by varchar [note: 'price_asc, distance_asc, newest']
+  created_at timestamptz [not null, default: `now()`]
+}
+
+Ref: seeker_profiles.user_id > users.id [delete: cascade]
+
+Ref: properties.host_id > users.id [delete: cascade]
+
+Ref: property_photos.property_id > properties.id [delete: cascade]
+Ref: property_amenities.property_id > properties.id [delete: cascade]
+Ref: property_rules.property_id > properties.id [delete: cascade]
+
+Ref: swipes.swiper_id > users.id [delete: cascade]
+Ref: swipes.target_property_id > properties.id [delete: cascade]
+Ref: swipes.target_seeker_id > seeker_profiles.id [delete: cascade]
+
+Ref: matches.property_id > properties.id [delete: cascade]
+Ref: matches.seeker_id > users.id [delete: cascade]
+
+Ref: messages.match_id > matches.id [delete: cascade]
+Ref: messages.sender_id > users.id [delete: cascade]
+
+Ref: user_preferences.user_id > users.id [delete: cascade]
