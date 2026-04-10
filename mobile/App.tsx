@@ -14,6 +14,7 @@ import {
   Animated,
   Modal,
   ScrollView,
+  TextInput,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
@@ -43,6 +44,41 @@ const SWIPE_THRESHOLD = SCREEN_WIDTH * 0.3;
 // ─── Auth types ──────────────────────────────────────────────────────────────
 type AuthScreen = 'role-select' | 'seeker-auth' | 'owner-auth' | 'dashboard';
 type DashboardTab = 'explore' | 'likes' | 'chat' | 'profile';
+type LikeSectionKey = 'received' | 'sent' | 'offer';
+
+interface LikeActivityItem {
+  id: string;
+  name: string;
+  imageUrl: string;
+  headline: string;
+  detail: string;
+  badge: string;
+  timeLabel: string;
+}
+
+interface LikeSection {
+  key: LikeSectionKey;
+  title: string;
+  items: LikeActivityItem[];
+}
+
+interface ChatMessage {
+  id: string;
+  sender: 'self' | 'other';
+  text: string;
+  timestamp: string;
+}
+
+interface ChatThread {
+  id: string;
+  title: string;
+  subtitle: string;
+  avatarUrl: string;
+  detail: string;
+  status: string;
+  unreadCount: number;
+  messages: ChatMessage[];
+}
 
 // ─── Colour tokens ────────────────────────────────────────────────────────────
 const COLORS = {
@@ -55,11 +91,197 @@ const COLORS = {
   white: '#FFFFFF',
 };
 
+const HOST_CONTACTS = [
+  'Olivia Carter',
+  'Daniel Kim',
+  'Maya Patel',
+  'Ethan Brooks',
+  'Claire Lee',
+];
+
 // ─── Helper ───────────────────────────────────────────────────────────────────
 function formatDate(iso: string) {
   const [, m, d] = iso.split('-');
   const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
   return `${months[parseInt(m, 10) - 1]} ${parseInt(d, 10)}`;
+}
+
+function createLikesSections(mode: AppMode): LikeSection[] {
+  if (mode === 'seeker') {
+    return [
+      {
+        key: 'received',
+        title: 'Like Received',
+        items: MOCK_PROPERTIES.slice(0, 2).map((property, index) => ({
+          id: `received-${property.id}`,
+          name: HOST_CONTACTS[index],
+          imageUrl: property.imageUrls[0],
+          headline: `${HOST_CONTACTS[index]} liked your profile`,
+          detail: `${property.apartmentName} · ${formatDate(property.availableStartDate)} to ${formatDate(property.availableEndDate)}`,
+          badge: `$${property.subletPrice}/mo`,
+          timeLabel: index === 0 ? '2m ago' : '58m ago',
+        })),
+      },
+      {
+        key: 'sent',
+        title: 'Like Sent',
+        items: MOCK_PROPERTIES.slice(2, 4).map((property, index) => ({
+          id: `sent-${property.id}`,
+          name: property.apartmentName,
+          imageUrl: property.imageUrls[0],
+          headline: `You liked ${property.apartmentName}`,
+          detail: `${HOST_CONTACTS[index + 2]} · ${property.address}`,
+          badge: `${property.roomType}`,
+          timeLabel: index === 0 ? 'Yesterday' : '2d ago',
+        })),
+      },
+      {
+        key: 'offer',
+        title: 'Offer Sent From Other Users',
+        items: MOCK_PROPERTIES.slice(0, 2).map((property, index) => ({
+          id: `offer-${property.id}`,
+          name: HOST_CONTACTS[index],
+          imageUrl: property.imageUrls[0],
+          headline: `${HOST_CONTACTS[index]} sent you a stay offer`,
+          detail: `${property.apartmentName} · Move-in window closes Apr ${14 + index}`,
+          badge: 'Offer ready',
+          timeLabel: index === 0 ? '5m ago' : '3h ago',
+        })),
+      },
+    ];
+  }
+
+  return [
+    {
+      key: 'received',
+      title: 'Like Received',
+      items: MOCK_SEEKER_CARDS.slice(0, 2).map((card, index) => ({
+        id: `received-${card.user.id}`,
+        name: card.user.name,
+        imageUrl: card.user.imageUrls[0],
+        headline: `${card.user.name} liked your listing`,
+        detail: `${card.profile.targetPriceMin}-${card.profile.targetPriceMax}/mo · ${formatDate(card.profile.desiredStartDate)} to ${formatDate(card.profile.desiredEndDate)}`,
+        badge: card.profile.preferredGender,
+        timeLabel: index === 0 ? '4m ago' : '41m ago',
+      })),
+    },
+    {
+      key: 'sent',
+      title: 'Like Sent',
+      items: MOCK_SEEKER_CARDS.slice(2, 4).map((card, index) => ({
+        id: `sent-${card.user.id}`,
+        name: card.user.name,
+        imageUrl: card.user.imageUrls[0],
+        headline: `You liked ${card.user.name}`,
+        detail: `${card.user.bio ?? 'Open to summer sublets'} · Budget ${card.profile.targetPriceMin}-${card.profile.targetPriceMax}/mo`,
+        badge: 'Profile saved',
+        timeLabel: index === 0 ? 'Yesterday' : '3d ago',
+      })),
+    },
+    {
+      key: 'offer',
+      title: 'Offer Sent From Other Users',
+      items: MOCK_SEEKER_CARDS.slice(0, 2).map((card, index) => ({
+        id: `offer-${card.user.id}`,
+        name: card.user.name,
+        imageUrl: card.user.imageUrls[0],
+        headline: `${card.user.name} sent a sublet offer`,
+        detail: `Ready to review terms for ${formatDate(card.profile.desiredStartDate)} to ${formatDate(card.profile.desiredEndDate)}`,
+        badge: 'Review now',
+        timeLabel: index === 0 ? '9m ago' : '2h ago',
+      })),
+    },
+  ];
+}
+
+function createChatThreads(mode: AppMode): ChatThread[] {
+  if (mode === 'seeker') {
+    return [
+      {
+        id: 'chat-p1',
+        title: 'The Hub on Campus',
+        subtitle: `Host · ${HOST_CONTACTS[0]}`,
+        avatarUrl: MOCK_PROPERTIES[0].imageUrls[0],
+        detail: '$1350/mo · Studio · Near Campus Mall',
+        status: 'Host replied 5m ago',
+        unreadCount: 2,
+        messages: [
+          { id: 'chat-p1-m1', sender: 'other', text: 'Hi! I saw you liked my listing and wanted to reach out.', timestamp: '9:12 AM' },
+          { id: 'chat-p1-m2', sender: 'self', text: 'Thanks! The studio looks great. Is the unit fully furnished?', timestamp: '9:15 AM' },
+          { id: 'chat-p1-m3', sender: 'other', text: 'Yes, bed, desk, and kitchen island stools all stay for the summer.', timestamp: '9:18 AM' },
+          { id: 'chat-p1-m4', sender: 'other', text: 'If you want, I can also send over a quick video walkthrough tonight.', timestamp: '9:19 AM' },
+        ],
+      },
+      {
+        id: 'chat-p2',
+        title: 'The James Madison',
+        subtitle: `Host · ${HOST_CONTACTS[1]}`,
+        avatarUrl: MOCK_PROPERTIES[1].imageUrls[0],
+        detail: '$1750/mo · 1BR · Rooftop access',
+        status: 'Waiting on your reply',
+        unreadCount: 0,
+        messages: [
+          { id: 'chat-p2-m1', sender: 'other', text: 'Happy to hold the place for 24 hours if you are serious about the dates.', timestamp: 'Yesterday' },
+          { id: 'chat-p2-m2', sender: 'self', text: 'That helps a lot. I just need to confirm my internship housing stipend today.', timestamp: 'Yesterday' },
+        ],
+      },
+      {
+        id: 'chat-p4',
+        title: 'Langdon Street Lofts',
+        subtitle: `Host · ${HOST_CONTACTS[3]}`,
+        avatarUrl: MOCK_PROPERTIES[3].imageUrls[0],
+        detail: '$1900/mo · Private Room · Furnished',
+        status: 'New thread',
+        unreadCount: 1,
+        messages: [
+          { id: 'chat-p4-m1', sender: 'other', text: 'I can be flexible on move-in if you need to start a week later.', timestamp: 'Mon' },
+        ],
+      },
+    ];
+  }
+
+  return [
+    {
+      id: 'chat-u1',
+      title: 'Emma Johnson',
+      subtitle: 'Seeker · Summer internship',
+      avatarUrl: MOCK_SEEKER_CARDS[0].user.imageUrls[0],
+      detail: 'Budget $1000-$1400/mo · Quiet lifestyle',
+      status: 'Active 8m ago',
+      unreadCount: 1,
+      messages: [
+        { id: 'chat-u1-m1', sender: 'other', text: 'Hi! Your listing at The Hub looks like a strong fit for my internship dates.', timestamp: '10:02 AM' },
+        { id: 'chat-u1-m2', sender: 'self', text: 'Great to hear. I can send building details and the lease transfer steps.', timestamp: '10:06 AM' },
+        { id: 'chat-u1-m3', sender: 'other', text: 'Perfect. I am especially curious about laundry and parking.', timestamp: '10:08 AM' },
+      ],
+    },
+    {
+      id: 'chat-u2',
+      title: 'Liam Park',
+      subtitle: 'Seeker · Downtown internship',
+      avatarUrl: MOCK_SEEKER_CARDS[1].user.imageUrls[0],
+      detail: 'Budget $1200-$1700/mo · Furnished preferred',
+      status: 'Awaiting docs',
+      unreadCount: 0,
+      messages: [
+        { id: 'chat-u2-m1', sender: 'other', text: 'If utilities average around $100, that still works for me.', timestamp: 'Yesterday' },
+        { id: 'chat-u2-m2', sender: 'self', text: 'Yes, that estimate has been pretty consistent this year.', timestamp: 'Yesterday' },
+      ],
+    },
+    {
+      id: 'chat-u3',
+      title: 'Sofia Martinez',
+      subtitle: 'Seeker · Flexible move-in',
+      avatarUrl: MOCK_SEEKER_CARDS[2].user.imageUrls[0],
+      detail: 'Budget $900-$1300/mo · Female preferred',
+      status: 'New thread',
+      unreadCount: 2,
+      messages: [
+        { id: 'chat-u3-m1', sender: 'other', text: 'Would you be open to a May 10 move-in instead of May 15?', timestamp: 'Sun' },
+        { id: 'chat-u3-m2', sender: 'other', text: 'I can handle the paperwork right away if that helps.', timestamp: 'Sun' },
+      ],
+    },
+  ];
 }
 
 // ─── Image Carousel (Tinder-style) ───────────────────────────────────────────
@@ -715,6 +937,320 @@ function TabPlaceholder({ title, subtitle, icon }: { title: string; subtitle: st
   );
 }
 
+function UtilityTabHeader({ title, subtitle }: { title: string; subtitle: string }) {
+  return (
+    <View style={styles.utilityHeader}>
+      <View style={styles.utilityHeaderBadge}>
+        <Text style={styles.utilityHeaderBadgeText}>Roomie</Text>
+      </View>
+      <Text style={styles.utilityHeaderTitle}>{title}</Text>
+      <Text style={styles.utilityHeaderSubtitle}>{subtitle}</Text>
+    </View>
+  );
+}
+
+function LikesTabContent({ sections }: { sections: LikeSection[] }) {
+  const totalCount = sections.reduce((sum, section) => sum + section.items.length, 0);
+
+  return (
+    <ScrollView
+      style={styles.utilityScroll}
+      contentContainerStyle={styles.utilityScrollContent}
+      showsVerticalScrollIndicator={false}
+    >
+      <UtilityTabHeader
+        title="Likes"
+        subtitle="Track interest, keep tabs on outbound likes, and review new offers in one place."
+      />
+
+      <LinearGradient
+        colors={['rgba(255,90,95,0.28)', 'rgba(255,90,95,0.08)']}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+        style={styles.likesSummaryCard}
+      >
+        <View style={styles.likesSummaryTextWrap}>
+          <Text style={styles.likesSummaryEyebrow}>Activity Snapshot</Text>
+          <Text style={styles.likesSummaryTitle}>{totalCount} active touchpoints</Text>
+          <Text style={styles.likesSummarySubtitle}>Everything here is grouped so you can scan the newest movement quickly.</Text>
+        </View>
+        <View style={styles.likesSummaryStats}>
+          {sections.map(section => (
+            <View key={section.key} style={styles.likesSummaryStat}>
+              <Text style={styles.likesSummaryStatValue}>{section.items.length}</Text>
+              <Text style={styles.likesSummaryStatLabel}>{section.title}</Text>
+            </View>
+          ))}
+        </View>
+      </LinearGradient>
+
+      {sections.map(section => (
+        <View key={section.key} style={styles.likesSectionCard}>
+          <View style={styles.likesSectionHeader}>
+            <Text style={styles.likesSectionTitle}>{section.title}</Text>
+            <View style={styles.likesSectionCountBadge}>
+              <Text style={styles.likesSectionCountText}>{section.items.length}</Text>
+            </View>
+          </View>
+
+          <View style={styles.likesSectionList}>
+            {section.items.map((item, index) => (
+              <View
+                key={item.id}
+                style={[
+                  styles.likeItemRow,
+                  index < section.items.length - 1 && styles.likeItemRowBorder,
+                ]}
+              >
+                <Image source={{ uri: item.imageUrl }} style={styles.likeAvatar} />
+                <View style={styles.likeItemBody}>
+                  <View style={styles.likeItemTitleRow}>
+                    <Text style={styles.likeItemName} numberOfLines={1}>
+                      {item.name}
+                    </Text>
+                    <Text style={styles.likeItemTime}>{item.timeLabel}</Text>
+                  </View>
+                  <Text style={styles.likeItemHeadline}>{item.headline}</Text>
+                  <Text style={styles.likeItemDetail} numberOfLines={2}>
+                    {item.detail}
+                  </Text>
+                </View>
+                <View style={styles.likeItemBadge}>
+                  <Text style={styles.likeItemBadgeText}>{item.badge}</Text>
+                </View>
+              </View>
+            ))}
+          </View>
+        </View>
+      ))}
+    </ScrollView>
+  );
+}
+
+function ChatTabContent({
+  threads,
+  selectedChatId,
+  draftMessage,
+  onSelectThread,
+  onChangeDraft,
+  onSendMessage,
+}: {
+  threads: ChatThread[];
+  selectedChatId: string;
+  draftMessage: string;
+  onSelectThread: (threadId: string) => void;
+  onChangeDraft: (value: string) => void;
+  onSendMessage: () => void;
+}) {
+  const [searchQuery, setSearchQuery] = React.useState('');
+  const [isThreadOpen, setIsThreadOpen] = React.useState(false);
+
+  const normalizedQuery = searchQuery.trim().toLowerCase();
+  const filteredThreads = threads.filter(thread => {
+    const lastMessage = thread.messages[thread.messages.length - 1];
+    const haystacks = [thread.title, thread.subtitle, lastMessage?.text ?? ''];
+
+    return haystacks.some(value => value.toLowerCase().includes(normalizedQuery));
+  });
+
+  const selectedThread = threads.find(thread => thread.id === selectedChatId) ?? threads[0] ?? null;
+
+  if (!selectedThread) {
+    return (
+      <TabPlaceholder
+        title="Chat"
+        subtitle="Conversations with matched users will appear here."
+        icon="chatbubble-ellipses-outline"
+      />
+    );
+  }
+
+  const openThread = (threadId: string) => {
+    onSelectThread(threadId);
+    setIsThreadOpen(true);
+  };
+
+  if (!isThreadOpen) {
+    return (
+      <View style={styles.chatScreen}>
+        <View style={styles.chatInboxHeader}>
+          <View>
+            <Text style={styles.chatInboxTitle}>Chats</Text>
+            <Text style={styles.chatInboxSubtitle}>{threads.length} conversations</Text>
+          </View>
+          <View style={styles.chatInboxAction}>
+            <Ionicons name="create-outline" size={18} color="#FFF" />
+          </View>
+        </View>
+
+        <View style={styles.chatSearchBar}>
+          <Ionicons name="search" size={16} color="rgba(255,255,255,0.55)" />
+          <TextInput
+            value={searchQuery}
+            onChangeText={setSearchQuery}
+            placeholder="Search"
+            placeholderTextColor="rgba(255,255,255,0.4)"
+            style={styles.chatSearchInput}
+          />
+          {searchQuery.length > 0 && (
+            <TouchableOpacity
+              activeOpacity={0.8}
+              onPress={() => setSearchQuery('')}
+              style={styles.chatSearchClear}
+            >
+              <Ionicons name="close" size={14} color="#FFF" />
+            </TouchableOpacity>
+          )}
+        </View>
+
+        <ScrollView
+          style={styles.chatList}
+          contentContainerStyle={styles.chatListContent}
+          showsVerticalScrollIndicator={false}
+        >
+          {filteredThreads.length === 0 ? (
+            <View style={styles.chatEmptySearch}>
+              <Text style={styles.chatEmptySearchTitle}>No chats found</Text>
+              <Text style={styles.chatEmptySearchSubtitle}>Try a different name or clear the search.</Text>
+            </View>
+          ) : (
+            filteredThreads.map(thread => {
+              const lastMessage = thread.messages[thread.messages.length - 1];
+              const previewPrefix = lastMessage?.sender === 'self' ? 'You: ' : '';
+              const previewText = `${previewPrefix}${lastMessage?.text ?? 'Start the conversation'}`;
+              const isActive = thread.id === selectedChatId;
+
+              return (
+                <TouchableOpacity
+                  key={thread.id}
+                  activeOpacity={0.85}
+                  onPress={() => openThread(thread.id)}
+                  style={[styles.chatListRow, isActive && styles.chatListRowActive]}
+                >
+                  <Image source={{ uri: thread.avatarUrl }} style={styles.chatListAvatar} />
+
+                  <View style={styles.chatListTextWrap}>
+                    <View style={styles.chatListTopRow}>
+                      <Text style={styles.chatListName} numberOfLines={1}>
+                        {thread.title}
+                      </Text>
+                      <Text style={styles.chatListTime}>{lastMessage?.timestamp ?? ''}</Text>
+                    </View>
+
+                    <Text style={styles.chatListPreview} numberOfLines={1}>
+                      {previewText}
+                    </Text>
+
+                    <View style={styles.chatListMetaRow}>
+                      <Text style={styles.chatListMeta} numberOfLines={1}>
+                        {thread.subtitle}
+                      </Text>
+                      {thread.unreadCount > 0 ? (
+                        <View style={styles.chatListUnread}>
+                          <Text style={styles.chatListUnreadText}>{thread.unreadCount}</Text>
+                        </View>
+                      ) : (
+                        <Ionicons
+                          name="chevron-forward"
+                          size={16}
+                          color="rgba(255,255,255,0.3)"
+                          style={styles.chatListChevron}
+                        />
+                      )}
+                    </View>
+                  </View>
+                </TouchableOpacity>
+              );
+            })
+          )}
+        </ScrollView>
+      </View>
+    );
+  }
+
+  return (
+    <View style={styles.chatScreen}>
+      <View style={styles.chatConversationHeader}>
+        <TouchableOpacity
+          activeOpacity={0.8}
+          onPress={() => setIsThreadOpen(false)}
+          style={styles.chatConversationBack}
+        >
+          <Ionicons name="chevron-back" size={20} color="#FFF" />
+        </TouchableOpacity>
+
+        <Image source={{ uri: selectedThread.avatarUrl }} style={styles.chatConversationAvatar} />
+
+        <View style={styles.chatConversationHeaderText}>
+          <Text style={styles.chatConversationTitle}>{selectedThread.title}</Text>
+          <Text style={styles.chatConversationStatus}>{selectedThread.status}</Text>
+        </View>
+      </View>
+
+      <ScrollView
+        style={styles.chatConversationMessages}
+        contentContainerStyle={styles.chatConversationMessagesContent}
+        showsVerticalScrollIndicator={false}
+      >
+        {selectedThread.messages.map(message => {
+          const isSelf = message.sender === 'self';
+          return (
+            <View
+              key={message.id}
+              style={[
+                styles.chatMessageRow,
+                isSelf ? styles.chatMessageRowSelf : styles.chatMessageRowOther,
+              ]}
+            >
+              <View
+                style={[
+                  styles.chatBubble,
+                  isSelf ? styles.chatBubbleSelf : styles.chatBubbleOther,
+                ]}
+              >
+                <Text style={[styles.chatBubbleText, isSelf && styles.chatBubbleTextSelf]}>
+                  {message.text}
+                </Text>
+              </View>
+              <Text style={[styles.chatMessageTime, isSelf && styles.chatMessageTimeSelf]}>
+                {message.timestamp}
+              </Text>
+            </View>
+          );
+        })}
+      </ScrollView>
+
+      <View style={styles.chatComposer}>
+        <TextInput
+          value={draftMessage}
+          onChangeText={onChangeDraft}
+          placeholder="Message..."
+          placeholderTextColor="rgba(255,255,255,0.42)"
+          style={styles.chatComposerInput}
+        />
+        <TouchableOpacity
+          activeOpacity={0.85}
+          onPress={onSendMessage}
+          disabled={!draftMessage.trim()}
+          style={[
+            styles.chatComposerSend,
+            !draftMessage.trim() && styles.chatComposerSendDisabled,
+          ]}
+        >
+          <Text
+            style={[
+              styles.chatComposerSendText,
+              !draftMessage.trim() && styles.chatComposerSendTextDisabled,
+            ]}
+          >
+            Send
+          </Text>
+        </TouchableOpacity>
+      </View>
+    </View>
+  );
+}
+
 // ─── Main App ─────────────────────────────────────────────────────────────────
 export default function App() {
   // Auth state
@@ -729,6 +1265,9 @@ export default function App() {
   const [properties, setProperties] = useState<Property[]>([...MOCK_PROPERTIES]);
   const [seekers, setSeekers] = useState<SeekerCard[]>([...MOCK_SEEKER_CARDS]);
   const [activeTab, setActiveTab] = useState<DashboardTab>('explore');
+  const [chatThreads, setChatThreads] = useState<ChatThread[]>(() => createChatThreads('seeker'));
+  const [selectedChatId, setSelectedChatId] = useState<string>(() => createChatThreads('seeker')[0]?.id ?? '');
+  const [draftMessage, setDraftMessage] = useState('');
 
   // Detail modal state
   const [detailProperty, setDetailProperty] = useState<Property | null>(null);
@@ -739,23 +1278,34 @@ export default function App() {
   // Ref for imperative swipe from action buttons
   const topCardRef = useRef<SwipeCardRef>(null);
 
-  const resetDashboardState = useCallback(() => {
+  const resetChatState = useCallback((mode: AppMode) => {
+    const nextThreads = createChatThreads(mode);
+    setChatThreads(nextThreads);
+    setSelectedChatId(nextThreads[0]?.id ?? '');
+    setDraftMessage('');
+  }, []);
+
+  const resetDashboardState = useCallback((mode: AppMode) => {
     setActiveTab('explore');
     setProperties([...MOCK_PROPERTIES]);
     setSeekers([...MOCK_SEEKER_CARDS]);
-  }, []);
+    resetChatState(mode);
+  }, [resetChatState]);
 
   const applyAuthenticatedUser = useCallback(
     (user: AuthUser, resetDecks = true) => {
+      const nextMode: AppMode = user.role === 'seeker' ? 'seeker' : 'host';
       selectedRoleRef.current = user.role;
       setCurrentUser(user);
       setAuthScreen('dashboard');
 
       if (resetDecks) {
-        resetDashboardState();
+        resetDashboardState(nextMode);
+      } else {
+        resetChatState(nextMode);
       }
     },
-    [resetDashboardState],
+    [resetChatState, resetDashboardState],
   );
 
   useEffect(() => {
@@ -771,6 +1321,9 @@ export default function App() {
       setActiveTab('explore');
       setDetailPropertyVisible(false);
       setDetailSeekerVisible(false);
+      setChatThreads([]);
+      setSelectedChatId('');
+      setDraftMessage('');
     };
 
     const restoreSession = async () => {
@@ -938,6 +1491,7 @@ export default function App() {
 
   const mode: AppMode = currentUser.role === 'seeker' ? 'seeker' : 'host';
   const currentDeck = mode === 'seeker' ? properties : seekers;
+  const likeSections = createLikesSections(mode);
 
   const removeTop = () => {
     if (mode === 'seeker') setProperties(p => p.slice(1));
@@ -954,23 +1508,60 @@ export default function App() {
 
   const visibleCards = currentDeck.slice(0, 4);
 
+  const handleSelectThread = (threadId: string) => {
+    setSelectedChatId(threadId);
+    setChatThreads(prevThreads =>
+      prevThreads.map(thread =>
+        thread.id === threadId
+          ? { ...thread, unreadCount: 0 }
+          : thread
+      )
+    );
+  };
+
+  const handleSendMessage = () => {
+    const trimmed = draftMessage.trim();
+
+    if (!trimmed || !selectedChatId) {
+      return;
+    }
+
+    setChatThreads(prevThreads =>
+      prevThreads.map(thread =>
+        thread.id === selectedChatId
+          ? {
+            ...thread,
+            status: 'Just now',
+            messages: [
+              ...thread.messages,
+              {
+                id: `${thread.id}-${Date.now()}`,
+                sender: 'self',
+                text: trimmed,
+                timestamp: 'Now',
+              },
+            ],
+          }
+          : thread
+      )
+    );
+    setDraftMessage('');
+  };
+
   const renderTabContent = () => {
     if (activeTab === 'likes') {
-      return (
-        <TabPlaceholder
-          title="Likes"
-          subtitle="Who liked you and who you liked will appear here."
-          icon="heart-outline"
-        />
-      );
+      return <LikesTabContent sections={likeSections} />;
     }
 
     if (activeTab === 'chat') {
       return (
-        <TabPlaceholder
-          title="Chat"
-          subtitle="Conversations with matched users will appear here."
-          icon="chatbubble-ellipses-outline"
+        <ChatTabContent
+          threads={chatThreads}
+          selectedChatId={selectedChatId}
+          draftMessage={draftMessage}
+          onSelectThread={handleSelectThread}
+          onChangeDraft={setDraftMessage}
+          onSendMessage={handleSendMessage}
         />
       );
     }
@@ -1432,6 +2023,479 @@ const styles = StyleSheet.create({
     color: '#8A8A8A',
     textAlign: 'center',
     lineHeight: 21,
+  },
+
+  utilityScroll: {
+    flex: 1,
+  },
+  utilityScrollContent: {
+    paddingTop: Platform.OS === 'android' ? (StatusBar.currentHeight ?? 32) + 72 : 118,
+    paddingBottom: TAB_BAR_HEIGHT + 56,
+    paddingHorizontal: 16,
+    gap: 16,
+  },
+  utilityHeader: {
+    gap: 10,
+  },
+  utilityHeaderBadge: {
+    alignSelf: 'flex-start',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 999,
+    backgroundColor: 'rgba(255,90,95,0.16)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,90,95,0.28)',
+  },
+  utilityHeaderBadgeText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#FFD7D8',
+    letterSpacing: 0.4,
+    textTransform: 'uppercase',
+  },
+  utilityHeaderTitle: {
+    fontSize: 34,
+    fontWeight: '800',
+    color: '#FFF',
+    letterSpacing: -0.8,
+  },
+  utilityHeaderSubtitle: {
+    fontSize: 15,
+    lineHeight: 22,
+    color: 'rgba(255,255,255,0.7)',
+    maxWidth: '92%',
+  },
+
+  likesSummaryCard: {
+    borderRadius: 28,
+    padding: 20,
+    gap: 18,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.08)',
+    backgroundColor: '#141414',
+  },
+  likesSummaryTextWrap: {
+    gap: 6,
+  },
+  likesSummaryEyebrow: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#FFD6D8',
+    letterSpacing: 0.6,
+    textTransform: 'uppercase',
+  },
+  likesSummaryTitle: {
+    fontSize: 24,
+    fontWeight: '800',
+    color: '#FFF',
+    letterSpacing: -0.5,
+  },
+  likesSummarySubtitle: {
+    fontSize: 14,
+    lineHeight: 20,
+    color: 'rgba(255,255,255,0.72)',
+  },
+  likesSummaryStats: {
+    gap: 10,
+  },
+  likesSummaryStat: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderRadius: 18,
+    backgroundColor: 'rgba(255,255,255,0.06)',
+  },
+  likesSummaryStatValue: {
+    fontSize: 22,
+    fontWeight: '800',
+    color: '#FFF',
+  },
+  likesSummaryStatLabel: {
+    flex: 1,
+    fontSize: 13,
+    fontWeight: '600',
+    color: 'rgba(255,255,255,0.72)',
+    textAlign: 'right',
+    marginLeft: 16,
+  },
+  likesSectionCard: {
+    backgroundColor: '#101010',
+    borderRadius: 24,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.07)',
+    padding: 16,
+    gap: 12,
+  },
+  likesSectionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  likesSectionTitle: {
+    fontSize: 18,
+    fontWeight: '800',
+    color: '#FFF',
+    letterSpacing: -0.3,
+  },
+  likesSectionCountBadge: {
+    minWidth: 32,
+    height: 32,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(255,90,95,0.18)',
+  },
+  likesSectionCountText: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: '#FFF',
+  },
+  likesSectionList: {
+    gap: 2,
+  },
+  likeItemRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    paddingVertical: 12,
+  },
+  likeItemRowBorder: {
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(255,255,255,0.08)',
+  },
+  likeAvatar: {
+    width: 58,
+    height: 58,
+    borderRadius: 18,
+    backgroundColor: '#2A2A2A',
+  },
+  likeItemBody: {
+    flex: 1,
+    gap: 3,
+  },
+  likeItemTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 12,
+  },
+  likeItemName: {
+    flex: 1,
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#FFF',
+  },
+  likeItemTime: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: 'rgba(255,255,255,0.45)',
+  },
+  likeItemHeadline: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#F0F0F0',
+    lineHeight: 20,
+  },
+  likeItemDetail: {
+    fontSize: 13,
+    lineHeight: 18,
+    color: 'rgba(255,255,255,0.62)',
+  },
+  likeItemBadge: {
+    maxWidth: 92,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    borderRadius: 14,
+    backgroundColor: 'rgba(255,255,255,0.08)',
+  },
+  likeItemBadgeText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#FFD7D8',
+    textAlign: 'center',
+  },
+
+  chatScreen: {
+    flex: 1,
+    paddingTop: Platform.OS === 'android' ? (StatusBar.currentHeight ?? 32) + 58 : 104,
+    paddingBottom: TAB_BAR_HEIGHT + 18,
+    paddingHorizontal: 16,
+  },
+  chatInboxHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 16,
+  },
+  chatInboxTitle: {
+    fontSize: 30,
+    fontWeight: '800',
+    color: '#FFF',
+    letterSpacing: -0.6,
+  },
+  chatInboxSubtitle: {
+    fontSize: 13,
+    color: 'rgba(255,255,255,0.52)',
+    marginTop: 4,
+  },
+  chatInboxAction: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(255,255,255,0.08)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.08)',
+  },
+  chatSearchBar: {
+    height: 48,
+    borderRadius: 16,
+    paddingHorizontal: 14,
+    marginBottom: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    backgroundColor: '#111111',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.08)',
+  },
+  chatSearchInput: {
+    flex: 1,
+    color: '#FFF',
+    fontSize: 15,
+    paddingVertical: 0,
+  },
+  chatSearchClear: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(255,255,255,0.12)',
+  },
+  chatList: {
+    flex: 1,
+  },
+  chatListContent: {
+    paddingBottom: 8,
+  },
+  chatEmptySearch: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingTop: 56,
+    gap: 8,
+  },
+  chatEmptySearchTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#FFF',
+  },
+  chatEmptySearchSubtitle: {
+    fontSize: 14,
+    lineHeight: 20,
+    color: 'rgba(255,255,255,0.5)',
+    textAlign: 'center',
+  },
+  chatListRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    paddingHorizontal: 6,
+    paddingVertical: 14,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(255,255,255,0.06)',
+  },
+  chatListRowActive: {
+    backgroundColor: 'rgba(255,255,255,0.04)',
+    borderRadius: 18,
+    borderBottomColor: 'transparent',
+  },
+  chatListAvatar: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: '#242424',
+  },
+  chatListTextWrap: {
+    flex: 1,
+    gap: 4,
+  },
+  chatListTopRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 12,
+  },
+  chatListName: {
+    flex: 1,
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#FFF',
+  },
+  chatListTime: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: 'rgba(255,255,255,0.42)',
+  },
+  chatListPreview: {
+    fontSize: 14,
+    color: 'rgba(255,255,255,0.78)',
+  },
+  chatListMetaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 12,
+  },
+  chatListMeta: {
+    flex: 1,
+    fontSize: 12,
+    color: 'rgba(255,255,255,0.48)',
+  },
+  chatListUnread: {
+    minWidth: 20,
+    height: 20,
+    borderRadius: 10,
+    paddingHorizontal: 6,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#FF5A5F',
+  },
+  chatListUnreadText: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: '#FFF',
+  },
+  chatListChevron: {
+    marginLeft: 8,
+  },
+  chatConversationHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    marginBottom: 14,
+  },
+  chatConversationBack: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(255,255,255,0.08)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.08)',
+  },
+  chatConversationAvatar: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    backgroundColor: '#242424',
+  },
+  chatConversationHeaderText: {
+    flex: 1,
+    gap: 2,
+  },
+  chatConversationTitle: {
+    fontSize: 17,
+    fontWeight: '700',
+    color: '#FFF',
+  },
+  chatConversationStatus: {
+    fontSize: 12,
+    color: 'rgba(255,255,255,0.52)',
+  },
+  chatConversationMessages: {
+    flex: 1,
+  },
+  chatConversationMessagesContent: {
+    paddingTop: 8,
+    paddingBottom: 16,
+    gap: 12,
+  },
+  chatMessageRow: {
+    maxWidth: '82%',
+    gap: 5,
+  },
+  chatMessageRowSelf: {
+    alignSelf: 'flex-end',
+  },
+  chatMessageRowOther: {
+    alignSelf: 'flex-start',
+  },
+  chatBubble: {
+    borderRadius: 20,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+  },
+  chatBubbleSelf: {
+    backgroundColor: '#FF5A5F',
+    borderBottomRightRadius: 6,
+  },
+  chatBubbleOther: {
+    backgroundColor: '#171717',
+    borderBottomLeftRadius: 6,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.06)',
+  },
+  chatBubbleText: {
+    fontSize: 14,
+    lineHeight: 20,
+    color: '#F4F4F4',
+  },
+  chatBubbleTextSelf: {
+    color: '#FFF',
+  },
+  chatMessageTime: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: 'rgba(255,255,255,0.4)',
+    paddingHorizontal: 4,
+  },
+  chatMessageTimeSelf: {
+    textAlign: 'right',
+  },
+  chatComposer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    borderRadius: 22,
+    backgroundColor: '#111111',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.08)',
+    marginTop: 10,
+  },
+  chatComposerInput: {
+    flex: 1,
+    minHeight: 40,
+    paddingHorizontal: 8,
+    paddingVertical: 10,
+    color: '#FFF',
+    fontSize: 15,
+  },
+  chatComposerSend: {
+    minWidth: 64,
+    height: 38,
+    borderRadius: 19,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#FF5A5F',
+    paddingHorizontal: 14,
+  },
+  chatComposerSendDisabled: {
+    backgroundColor: 'rgba(255,255,255,0.08)',
+  },
+  chatComposerSendText: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#FFF',
+  },
+  chatComposerSendTextDisabled: {
+    color: 'rgba(255,255,255,0.45)',
   },
 
   // Empty state
