@@ -1,13 +1,26 @@
 from __future__ import annotations
 
 import os
-import socket
 from contextlib import contextmanager
 from typing import Generator
 from urllib.parse import quote, unquote
 
 import psycopg
 from psycopg.rows import dict_row
+
+
+def _is_vercel_runtime() -> bool:
+    """
+    Detect Vercel Python Functions. Env vars are not always present at runtime;
+    code is deployed under /var/task/.
+    """
+    if os.getenv("VERCEL") or os.getenv("VERCEL_ENV") or os.getenv("VERCEL_REGION"):
+        return True
+    try:
+        here = os.path.abspath(__file__).replace("\\", "/")
+    except NameError:
+        return False
+    return "/var/task/" in here
 
 
 def _postgres_host_from_uri(url: str) -> str | None:
@@ -50,39 +63,29 @@ def _postgres_host_port_from_uri(url: str) -> tuple[str | None, int]:
     return host, 5432
 
 
-def _vercel_prefer_ipv4_for_supabase_direct(url: str) -> str:
+def _require_pooler_on_vercel_if_still_direct_db(url: str) -> None:
     """
-    Vercel often cannot open TCP to Supabase direct DB over IPv6.
-    If DNS has an A record, libpq can connect via hostaddr=IPv4 while host stays db.*.supabase.co (TLS SNI).
-    Prefer Transaction pooler (6543) for serverless; this is a fallback when DATABASE_URL is still direct.
+    On Vercel, Supabase *direct* db.*.supabase.co:5432 resolves to IPv6 and fails.
+    Transaction pooler (…pooler.supabase.com:6543) is required — do not rely on hostaddr hacks.
     """
-    if not os.getenv("VERCEL"):
-        return url
+    if not _is_vercel_runtime():
+        return
     low = url.lower()
     if "pooler.supabase.com" in low or ":6543" in url:
-        return url
-    if "hostaddr=" in low:
-        return url
+        return
     host, port = _postgres_host_port_from_uri(url)
     if not host or not (host.startswith("db.") and host.endswith(".supabase.co")):
-        return url
+        return
     if port != 5432:
-        return url
-    try:
-        infos = socket.getaddrinfo(
-            host,
-            port,
-            family=socket.AF_INET,
-            type=socket.SOCK_STREAM,
-            proto=socket.IPPROTO_TCP,
-        )
-    except OSError:
-        return url
-    if not infos:
-        return url
-    ipv4 = infos[0][4][0]
-    join = "&" if "?" in url else "?"
-    return f"{url}{join}hostaddr={ipv4}"
+        return
+    raise RuntimeError(
+        "Vercel DATABASE_URL is still Supabase *direct* (db.<ref>.supabase.co port 5432). "
+        "That host resolves to IPv6; Vercel serverless usually cannot connect. "
+        "Fix: Supabase Dashboard → Project Settings → Database → Connection string → "
+        "choose **Transaction pooler** (URI uses …pooler.supabase.com and port **6543**, "
+        "user often **postgres.<project-ref>**). Replace DATABASE_URL in Vercel → "
+        "Environment Variables, then **Redeploy**."
+    )
 
 
 def _normalize_postgres_uri(url: str) -> str:
@@ -141,7 +144,7 @@ def dsn() -> str:
             "Supabase: Project Settings → Database → copy URI into repo root .env"
         )
     normalized = _ensure_supabase_ssl(_normalize_postgres_uri(url.strip()))
-    normalized = _vercel_prefer_ipv4_for_supabase_direct(normalized)
+    _require_pooler_on_vercel_if_still_direct_db(normalized)
     host = _postgres_host_from_uri(normalized)
     if not host:
         raise RuntimeError(
