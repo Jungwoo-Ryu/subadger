@@ -1,6 +1,8 @@
+import threading
 from uuid import UUID
 
 from fastapi import APIRouter, HTTPException, Query
+from psycopg import sql as psql
 from psycopg.types.json import Json
 
 from db import connection
@@ -15,6 +17,66 @@ from schemas import (
 router = APIRouter(prefix="/v1/profiles", tags=["profiles"])
 
 _WEIGHT_TOTAL = 10
+
+_col_lock = threading.Lock()
+_PROFILE_COLS_CACHE: list[str] | None = None
+_SEEKER_COLS_CACHE: list[str] | None = None
+
+
+def _columns_for_table(cur, table: str) -> list[str]:
+    cur.execute(
+        """
+        SELECT column_name
+        FROM information_schema.columns
+        WHERE table_schema = 'public' AND table_name = %s
+        ORDER BY ordinal_position
+        """,
+        (table,),
+    )
+    return [r[0] for r in cur.fetchall()]
+
+
+def _profiles_columns(cur) -> list[str]:
+    """Cached: only columns that actually exist (works on DBs before profile extension migration)."""
+    global _PROFILE_COLS_CACHE
+    if _PROFILE_COLS_CACHE is not None:
+        return _PROFILE_COLS_CACHE
+    with _col_lock:
+        if _PROFILE_COLS_CACHE is None:
+            _PROFILE_COLS_CACHE = _columns_for_table(cur, "profiles")
+        return _PROFILE_COLS_CACHE
+
+
+def _seeker_columns(cur) -> list[str]:
+    global _SEEKER_COLS_CACHE
+    if _SEEKER_COLS_CACHE is not None:
+        return _SEEKER_COLS_CACHE
+    with _col_lock:
+        if _SEEKER_COLS_CACHE is None:
+            _SEEKER_COLS_CACHE = _columns_for_table(cur, "seeker_profiles")
+        return _SEEKER_COLS_CACHE
+
+
+def _select_profile_row(cur, user_id: str):
+    cols = _profiles_columns(cur)
+    if not cols:
+        return None
+    q = psql.SQL("SELECT {} FROM profiles WHERE id = %s").format(
+        psql.SQL(", ").join(psql.Identifier(c) for c in cols)
+    )
+    cur.execute(q, (str(user_id),))
+    return cur.fetchone()
+
+
+def _select_seeker_row(cur, user_id: str):
+    cols = _seeker_columns(cur)
+    if not cols:
+        return None
+    q = psql.SQL("SELECT {} FROM seeker_profiles WHERE user_id = %s").format(
+        psql.SQL(", ").join(psql.Identifier(c) for c in cols)
+    )
+    cur.execute(q, (str(user_id),))
+    return cur.fetchone()
 
 
 def _ensure_seeker_row(cur, user_id: str) -> None:
@@ -119,24 +181,12 @@ def _completeness_for_row(p: dict, sp: dict | None) -> tuple[int, list[str]]:
 def profile_completeness(user_id: UUID = Query(...)):
     with connection() as conn:
         with conn.cursor() as cur:
-            cur.execute(
-                """
-                SELECT id, email, role, display_name, avatar_url,
-                       school_email_verified_at, grade_or_year, affiliation, roommate_prefs
-                FROM profiles WHERE id = %s
-                """,
-                (str(user_id),),
-            )
-            p = cur.fetchone()
+            p = _select_profile_row(cur, str(user_id))
             if not p:
                 raise HTTPException(status_code=404, detail="Profile not found")
             sp = None
             if p["role"] == "seeker":
-                cur.execute(
-                    "SELECT * FROM seeker_profiles WHERE user_id = %s",
-                    (str(user_id),),
-                )
-                sp = cur.fetchone()
+                sp = _select_seeker_row(cur, str(user_id))
     pct, missing = _completeness_for_row(dict(p), dict(sp) if sp else None)
     return ProfileCompletenessResponse(percent=pct, missing=missing)
 
@@ -145,15 +195,7 @@ def profile_completeness(user_id: UUID = Query(...)):
 def get_profile_me(user_id: UUID = Query(...)):
     with connection() as conn:
         with conn.cursor() as cur:
-            cur.execute(
-                """
-                SELECT id, email, role, display_name, avatar_url, school_email,
-                       school_email_verified_at, grade_or_year, affiliation, roommate_prefs
-                FROM profiles WHERE id = %s
-                """,
-                (str(user_id),),
-            )
-            p = cur.fetchone()
+            p = _select_profile_row(cur, str(user_id))
             if not p:
                 raise HTTPException(status_code=404, detail="Profile not found")
             row = dict(p)
@@ -164,15 +206,7 @@ def get_profile_me(user_id: UUID = Query(...)):
             seeker_block: SeekerPrefsMe | None = None
             if (row.get("role") or "").strip() == "seeker":
                 _ensure_seeker_row(cur, str(user_id))
-                cur.execute(
-                    """
-                    SELECT budget_min, budget_max, stay_start_date, stay_end_date,
-                           room_type_pref, furnished_pref, gender_pref, prefs
-                    FROM seeker_profiles WHERE user_id = %s
-                    """,
-                    (str(user_id),),
-                )
-                sp = cur.fetchone()
+                sp = _select_seeker_row(cur, str(user_id))
                 if sp:
                     seeker_block = _seeker_prefs_from_row(dict(sp))
             conn.commit()
@@ -194,63 +228,65 @@ def get_profile_me(user_id: UUID = Query(...)):
 
 @router.patch("/me")
 def patch_profile(body: ProfilePatchRequest):
-    fields: list[str] = []
-    vals: list = []
-    mapping = [
-        ("display_name", body.display_name),
-        ("avatar_url", body.avatar_url),
-        ("school_email", body.school_email),
-        ("grade_or_year", body.grade_or_year),
-        ("affiliation", body.affiliation),
-    ]
-    for col, v in mapping:
-        if v is not None:
-            fields.append(f"{col} = %s")
-            vals.append(v)
-    if body.roommate_prefs is not None:
-        fields.append("roommate_prefs = %s::jsonb")
-        vals.append(Json(body.roommate_prefs))
-    if not fields:
-        return {"ok": True, "updated": False}
-
-    vals.append(str(body.user_id))
-    sql = f"UPDATE profiles SET {', '.join(fields)} WHERE id = %s"
     with connection() as conn:
         with conn.cursor() as cur:
-            cur.execute(sql, vals)
+            allowed = frozenset(_profiles_columns(cur))
+            parts: list[psql.SQL] = []
+            vals: list = []
+            mapping = [
+                ("display_name", body.display_name),
+                ("avatar_url", body.avatar_url),
+                ("school_email", body.school_email),
+                ("grade_or_year", body.grade_or_year),
+                ("affiliation", body.affiliation),
+            ]
+            for col, v in mapping:
+                if v is not None and col in allowed:
+                    parts.append(psql.SQL("{} = %s").format(psql.Identifier(col)))
+                    vals.append(v)
+            if body.roommate_prefs is not None and "roommate_prefs" in allowed:
+                parts.append(psql.SQL("{} = %s::jsonb").format(psql.Identifier("roommate_prefs")))
+                vals.append(Json(body.roommate_prefs))
+            if not parts:
+                return {"ok": True, "updated": False}
+            vals.append(str(body.user_id))
+            upd = psql.SQL("UPDATE profiles SET {} WHERE id = %s").format(psql.SQL(", ").join(parts))
+            cur.execute(upd, vals)
             conn.commit()
     return {"ok": True, "updated": True}
 
 
 @router.patch("/me/seeker")
 def patch_seeker_prefs(body: SeekerPrefsPatchRequest):
-    fields: list[str] = []
-    vals: list = []
-    mapping = [
-        ("budget_min", body.budget_min),
-        ("budget_max", body.budget_max),
-        ("stay_start_date", body.stay_start_date),
-        ("stay_end_date", body.stay_end_date),
-        ("room_type_pref", body.room_type_pref),
-        ("furnished_pref", body.furnished_pref),
-        ("gender_pref", body.gender_pref),
-    ]
-    for col, v in mapping:
-        if v is not None:
-            fields.append(f"{col} = %s")
-            vals.append(v)
-    if body.prefs is not None:
-        fields.append("prefs = %s::jsonb")
-        vals.append(Json(body.prefs))
-    if not fields:
-        return {"ok": True, "updated": False}
-
     uid = str(body.user_id)
     with connection() as conn:
         with conn.cursor() as cur:
+            allowed = frozenset(_seeker_columns(cur))
+            parts: list[psql.SQL] = []
+            vals: list = []
+            mapping = [
+                ("budget_min", body.budget_min),
+                ("budget_max", body.budget_max),
+                ("stay_start_date", body.stay_start_date),
+                ("stay_end_date", body.stay_end_date),
+                ("room_type_pref", body.room_type_pref),
+                ("furnished_pref", body.furnished_pref),
+                ("gender_pref", body.gender_pref),
+            ]
+            for col, v in mapping:
+                if v is not None and col in allowed:
+                    parts.append(psql.SQL("{} = %s").format(psql.Identifier(col)))
+                    vals.append(v)
+            if body.prefs is not None and "prefs" in allowed:
+                parts.append(psql.SQL("{} = %s::jsonb").format(psql.Identifier("prefs")))
+                vals.append(Json(body.prefs))
+            if not parts:
+                return {"ok": True, "updated": False}
             _ensure_seeker_row(cur, uid)
             vals.append(uid)
-            sql = f"UPDATE seeker_profiles SET {', '.join(fields)} WHERE user_id = %s"
-            cur.execute(sql, vals)
+            upd = psql.SQL("UPDATE seeker_profiles SET {} WHERE user_id = %s").format(
+                psql.SQL(", ").join(parts)
+            )
+            cur.execute(upd, vals)
             conn.commit()
     return {"ok": True, "updated": True}

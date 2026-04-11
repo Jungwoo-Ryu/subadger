@@ -3,12 +3,37 @@
 from __future__ import annotations
 
 import json
+import threading
 from datetime import date
 from typing import Any, Optional
 from uuid import UUID
 
 from db import connection
 from listing_sql import LISTING_DISPLAY_TITLE
+
+_listings_nb_lock = threading.Lock()
+_listings_has_neighborhood: bool | None = None
+
+
+def _listings_neighborhood_column_exists(cur) -> bool:
+    global _listings_has_neighborhood
+    if _listings_has_neighborhood is not None:
+        return _listings_has_neighborhood
+    with _listings_nb_lock:
+        if _listings_has_neighborhood is None:
+            cur.execute(
+                """
+                SELECT EXISTS (
+                  SELECT 1 FROM information_schema.columns
+                  WHERE table_schema = 'public'
+                    AND table_name = 'listings'
+                    AND column_name = 'neighborhood'
+                ) AS ok
+                """
+            )
+            row = cur.fetchone()
+            _listings_has_neighborhood = bool(row and next(iter(row.values())))
+        return _listings_has_neighborhood
 
 
 def _row_to_item(row: dict) -> dict:
@@ -130,12 +155,10 @@ def fetch_feed(
         if cleaned:
             where.append("l.room_type ILIKE ANY(%s)")
             params.append(cleaned)
-    if neighborhood and neighborhood.strip():
-        where.append(
-            "(l.neighborhood ILIKE %s OR l.address ILIKE %s)"
-        )
-        q = f"%{neighborhood.strip()}%"
-        params.extend([q, q])
+
+    nb_search_q: Optional[str] = (
+        f"%{neighborhood.strip()}%" if neighborhood and neighborhood.strip() else None
+    )
 
     if amenities_keys:
         blob = {k.strip(): True for k in amenities_keys if k.strip()}
@@ -167,7 +190,18 @@ def fetch_feed(
     elif sort == "distance_asc" and dist_params:
         order_clause = "dist_mi ASC NULLS LAST, l.created_at DESC"
 
-    sql = f"""
+    with connection() as conn:
+        with conn.cursor() as cur:
+            has_nb = _listings_neighborhood_column_exists(cur)
+            if nb_search_q is not None:
+                if has_nb:
+                    where.append("(l.neighborhood ILIKE %s OR l.address ILIKE %s)")
+                    params.extend([nb_search_q, nb_search_q])
+                else:
+                    where.append("l.address ILIKE %s")
+                    params.append(nb_search_q)
+            nb_select = "l.neighborhood" if has_nb else "NULL::text AS neighborhood"
+            sql = f"""
       SELECT
         l.id AS listing_id,
         l.host_id,
@@ -177,7 +211,7 @@ def fetch_feed(
         l.start_date,
         l.end_date,
         l.address,
-        l.neighborhood,
+        {nb_select},
         l.lat,
         l.lng,
         l.room_type,
@@ -204,19 +238,19 @@ def fetch_feed(
       ORDER BY {order_clause}
       LIMIT %s OFFSET %s
     """
-
-    params = dist_params + params + [limit, offset]
-
-    with connection() as conn:
-        with conn.cursor() as cur:
-            cur.execute(sql, params)
+            exec_params = dist_params + params + [limit, offset]
+            cur.execute(sql, exec_params)
             rows = cur.fetchall()
 
     return [_row_to_item(r) for r in rows], offset + len(rows)
 
 
 def fetch_listing_by_id(listing_id: UUID) -> Optional[dict]:
-    sql = f"""
+    with connection() as conn:
+        with conn.cursor() as cur:
+            has_nb = _listings_neighborhood_column_exists(cur)
+            nb_select = "l.neighborhood" if has_nb else "NULL::text AS neighborhood"
+            sql = f"""
       SELECT
         l.id AS listing_id,
         l.host_id,
@@ -226,7 +260,7 @@ def fetch_listing_by_id(listing_id: UUID) -> Optional[dict]:
         l.start_date,
         l.end_date,
         l.address,
-        l.neighborhood,
+        {nb_select},
         l.lat,
         l.lng,
         l.room_type,
@@ -250,8 +284,6 @@ def fetch_listing_by_id(listing_id: UUID) -> Optional[dict]:
       WHERE l.id = %s AND l.status = 'active'
       GROUP BY l.id, p.display_name
     """
-    with connection() as conn:
-        with conn.cursor() as cur:
             cur.execute(sql, (str(listing_id),))
             row = cur.fetchone()
     if not row:
