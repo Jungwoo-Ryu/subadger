@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import socket
 from contextlib import contextmanager
 from typing import Generator
 from urllib.parse import quote, unquote
@@ -25,6 +26,63 @@ def _postgres_host_from_uri(url: str) -> str | None:
         return None
     host = hostport.split(":")[0].strip()
     return host or None
+
+
+def _postgres_host_port_from_uri(url: str) -> tuple[str | None, int]:
+    host = _postgres_host_from_uri(url)
+    if not host:
+        return None, 5432
+    raw = url.strip()
+    for prefix in ("postgresql://", "postgres://"):
+        if raw.startswith(prefix):
+            rest = raw[len(prefix) :]
+            break
+    else:
+        return host, 5432
+    if "@" not in rest:
+        return host, 5432
+    hostport = rest.rsplit("@", 1)[1].split("/")[0].split("?")[0]
+    if ":" in hostport:
+        try:
+            return host, int(hostport.rsplit(":", 1)[-1])
+        except ValueError:
+            return host, 5432
+    return host, 5432
+
+
+def _vercel_prefer_ipv4_for_supabase_direct(url: str) -> str:
+    """
+    Vercel often cannot open TCP to Supabase direct DB over IPv6.
+    If DNS has an A record, libpq can connect via hostaddr=IPv4 while host stays db.*.supabase.co (TLS SNI).
+    Prefer Transaction pooler (6543) for serverless; this is a fallback when DATABASE_URL is still direct.
+    """
+    if not os.getenv("VERCEL"):
+        return url
+    low = url.lower()
+    if "pooler.supabase.com" in low or ":6543" in url:
+        return url
+    if "hostaddr=" in low:
+        return url
+    host, port = _postgres_host_port_from_uri(url)
+    if not host or not (host.startswith("db.") and host.endswith(".supabase.co")):
+        return url
+    if port != 5432:
+        return url
+    try:
+        infos = socket.getaddrinfo(
+            host,
+            port,
+            family=socket.AF_INET,
+            type=socket.SOCK_STREAM,
+            proto=socket.IPPROTO_TCP,
+        )
+    except OSError:
+        return url
+    if not infos:
+        return url
+    ipv4 = infos[0][4][0]
+    join = "&" if "?" in url else "?"
+    return f"{url}{join}hostaddr={ipv4}"
 
 
 def _normalize_postgres_uri(url: str) -> str:
@@ -83,6 +141,7 @@ def dsn() -> str:
             "Supabase: Project Settings → Database → copy URI into repo root .env"
         )
     normalized = _ensure_supabase_ssl(_normalize_postgres_uri(url.strip()))
+    normalized = _vercel_prefer_ipv4_for_supabase_direct(normalized)
     host = _postgres_host_from_uri(normalized)
     if not host:
         raise RuntimeError(
