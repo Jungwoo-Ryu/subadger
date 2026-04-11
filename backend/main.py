@@ -7,10 +7,16 @@ from dotenv import load_dotenv
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from routers.auth_email import router as auth_email_router
-from routers.auth_login import router as auth_login_router
-from routers.feed import router as feed_router
-from routers.swipe import router as swipe_router
+from features.auth.email import router as auth_email_router
+from features.auth.login import router as auth_login_router
+from features.chat.router import router as chat_router
+from features.feed.router import router as feed_router
+from features.feed_stack.router import router as feed_stack_router
+from features.likes.router import router as likes_router
+from features.listings.router import router as listings_router
+from features.profiles.router import router as profiles_router
+from features.super_like.router import router as super_like_router
+from features.swipe.router import router as swipe_router
 
 # 저장소 루트의 .env (backend/에서 uvicorn 실행해도 읽힘)
 load_dotenv(Path(__file__).resolve().parent.parent / ".env")
@@ -33,7 +39,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title="Subadger API",
-    version="1.0.0",
+    version="1.1.0",
     lifespan=lifespan,
 )
 
@@ -49,6 +55,12 @@ app.add_middleware(
 
 app.include_router(feed_router)
 app.include_router(swipe_router)
+app.include_router(super_like_router)
+app.include_router(feed_stack_router)
+app.include_router(likes_router)
+app.include_router(chat_router)
+app.include_router(profiles_router)
+app.include_router(listings_router)
 app.include_router(auth_email_router)
 app.include_router(auth_login_router)
 
