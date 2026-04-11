@@ -6,6 +6,7 @@ from pathlib import Path
 from dotenv import load_dotenv
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import HTMLResponse
 
 from features.auth.email import router as auth_email_router
 from features.auth.login import router as auth_login_router
@@ -73,3 +74,40 @@ def root():
 @app.get("/health")
 def health():
     return {"status": "healthy"}
+
+
+_EMAIL_CONFIRMED_HTML = """<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Email confirmed</title>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 28rem; margin: 3rem auto; padding: 0 1.25rem;
+           line-height: 1.5; color: #1c1917; }
+    h1 { font-size: 1.35rem; color: #b91c1c; }
+    p { color: #57534e; }
+    code { font-size: 0.85rem; background: #f5f5f4; padding: 0.15rem 0.35rem; border-radius: 4px; }
+  </style>
+</head>
+<body>
+  <h1>Email confirmed</h1>
+  <p>Your account is verified. You can close this tab and return to the <strong>SubLease Match</strong> app, then sign in.</p>
+  <p>If the app does not open automatically, open it manually and log in with the same email and password.</p>
+</body>
+</html>"""
+
+
+@app.get("/auth/email-confirmed", response_class=HTMLResponse)
+def auth_email_confirmed():
+    """
+    Landing page after Supabase email confirmation (signUp emailRedirectTo).
+    Add this full URL under Supabase → Authentication → URL Configuration → Redirect URLs.
+    """
+    return HTMLResponse(content=_EMAIL_CONFIRMED_HTML)
+
+
+@app.get("/auth/confirm", response_class=HTMLResponse)
+def auth_confirm_alias():
+    """Alias for shorter links or older configs."""
+    return HTMLResponse(content=_EMAIL_CONFIRMED_HTML)

@@ -1,5 +1,6 @@
 import type { User } from '@supabase/supabase-js';
 
+import { getEmailConfirmationRedirectUrl } from './authRedirect';
 import { getSupabaseClient } from './supabase';
 
 export type AuthRole = 'seeker' | 'owner';
@@ -97,6 +98,7 @@ export async function signUpWithEmailPassword({
   role,
 }: SignUpParams): Promise<SignUpResult> {
   const metadataRole = roleToMetadata(role);
+  const emailRedirectTo = getEmailConfirmationRedirectUrl();
   const { data, error } = await getSupabaseClient().auth.signUp({
     email,
     password,
@@ -106,6 +108,7 @@ export async function signUpWithEmailPassword({
         role: metadataRole,
         current_app_mode: metadataRole,
       },
+      ...(emailRedirectTo ? { emailRedirectTo } : {}),
     },
   });
 

@@ -7,7 +7,12 @@
     "userInterfaceStyle": "light",
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.sublease.matchingapp"
+      "bundleIdentifier": "com.sublease.matchingapp",
+      "infoPlist": {
+        "NSAppTransportSecurity": {
+          "NSAllowsLocalNetworking": true
+        }
+      }
     },
     "android": {
       "package": "com.sublease.matchingapp"
