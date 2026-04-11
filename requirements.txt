@@ -1,0 +1,2 @@
+# Vercel installs from repo root when Root Directory is not set to `backend`.
+-r backend/requirements.txt
