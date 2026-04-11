@@ -8,6 +8,7 @@ from typing import Any, Optional
 from uuid import UUID
 
 from db import connection
+from listing_sql import LISTING_DISPLAY_TITLE
 
 
 def _row_to_item(row: dict) -> dict:
@@ -171,7 +172,7 @@ def fetch_feed(
         l.id AS listing_id,
         l.host_id,
         p.display_name AS host_name,
-        l.title,
+        {LISTING_DISPLAY_TITLE} AS title,
         l.price_monthly,
         l.start_date,
         l.end_date,
@@ -215,12 +216,12 @@ def fetch_feed(
 
 
 def fetch_listing_by_id(listing_id: UUID) -> Optional[dict]:
-    sql = """
+    sql = f"""
       SELECT
         l.id AS listing_id,
         l.host_id,
         p.display_name AS host_name,
-        l.title,
+        {LISTING_DISPLAY_TITLE} AS title,
         l.price_monthly,
         l.start_date,
         l.end_date,

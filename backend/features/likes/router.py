@@ -3,6 +3,7 @@ from uuid import UUID
 from fastapi import APIRouter, HTTPException, Query
 
 from db import connection
+from listing_sql import LISTING_DISPLAY_TITLE
 from schemas import (
     InterestRespondRequest,
     InterestRespondResponse,
@@ -20,7 +21,7 @@ _BASE_SQL = """
   SELECT
     i.id AS interest_id,
     i.listing_id,
-    COALESCE(NULLIF(btrim(l.title), ''), left(l.address, 80)) AS title,
+    {listing_title} AS title,
     l.address,
     l.price_monthly,
     i.state,
@@ -86,6 +87,7 @@ def likes_sent(
     limit: int = Query(50, ge=1, le=100),
 ):
     sql = _BASE_SQL.format(
+        listing_title=LISTING_DISPLAY_TITLE,
         cp_join="i.recipient_id",
         where_uid="sender_id",
     )
@@ -118,6 +120,7 @@ def likes_received(
     limit: int = Query(50, ge=1, le=100),
 ):
     sql = _BASE_SQL.format(
+        listing_title=LISTING_DISPLAY_TITLE,
         cp_join="i.sender_id",
         where_uid="recipient_id",
     )

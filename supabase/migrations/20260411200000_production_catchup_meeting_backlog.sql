@@ -1,6 +1,7 @@
--- Meeting backlog: listing title & filters, profile extensions, super likes, feed stack, chat images.
--- Profiles/listings columns above also exist on fresh DBs (see 20260320 CREATE TABLE); ALTERs here stay
--- idempotent (IF NOT EXISTS) for projects created before that merge.
+-- Production catch-up: listings.title, profiles school fields + roommate_prefs, messages image,
+-- super_likes + feed_session_stack + RLS.
+-- Safe to run multiple times (IF NOT EXISTS / DROP POLICY IF EXISTS).
+-- If `supabase db push` fails, paste this entire file into Supabase → SQL Editor → Run.
 
 -- -----------------------------------------------------------------------------
 -- listings
@@ -64,7 +65,7 @@ ALTER TABLE public.messages
   );
 
 -- -----------------------------------------------------------------------------
--- super_likes — offer / question; one per sender per UTC day
+-- super_likes
 -- -----------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS public.super_likes (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -82,7 +83,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_super_likes_one_per_sender_day
 CREATE INDEX IF NOT EXISTS idx_super_likes_recipient ON public.super_likes (recipient_id);
 
 -- -----------------------------------------------------------------------------
--- feed_session_stack — server-side “back” stack (UUID array, end = top)
+-- feed_session_stack
 -- -----------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS public.feed_session_stack (
   user_id UUID PRIMARY KEY REFERENCES public.profiles (id) ON DELETE CASCADE,

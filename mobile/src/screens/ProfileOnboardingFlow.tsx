@@ -20,7 +20,7 @@ import {
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-import { BuckyLoading } from '../components/BuckyLoading';
+import { FullscreenBuckyLoading } from '../components/FullscreenBuckyLoading';
 import type { AuthUser } from '../lib/auth';
 import { ensureProfileRecord } from '../lib/profile';
 import {
@@ -288,22 +288,23 @@ export default function ProfileOnboardingFlow({ user, onFinished }: ProfileOnboa
 
   if (!isSeeker) {
     return (
-      <View style={[styles.root, styles.centered, { paddingTop: topPad, paddingHorizontal: space.lg }]}>
-        <Text style={styles.welcomeTitle}>You’re all set</Text>
-        <Text style={styles.slideBody}>
-          Host tools use the Explore tab. You can add listing details from your dashboard flows.
-        </Text>
-        {saving ? (
-          <BuckyLoading size={88} swing={24} />
-        ) : (
-          <Pressable
-            style={({ pressed }) => [styles.btn, { marginTop: 28 }, pressed && styles.btnPressed]}
-            onPress={() => void finish()}
-          >
-            <Text style={styles.btnText}>Enter app</Text>
-          </Pressable>
-        )}
-      </View>
+      <>
+        <View style={[styles.root, styles.centered, { paddingTop: topPad, paddingHorizontal: space.lg }]}>
+          <Text style={styles.welcomeTitle}>You’re all set</Text>
+          <Text style={styles.slideBody}>
+            Host tools use the Explore tab. You can add listing details from your dashboard flows.
+          </Text>
+          {saving ? null : (
+            <Pressable
+              style={({ pressed }) => [styles.btn, { marginTop: 28 }, pressed && styles.btnPressed]}
+              onPress={() => void finish()}
+            >
+              <Text style={styles.btnText}>Enter app</Text>
+            </Pressable>
+          )}
+        </View>
+        <FullscreenBuckyLoading visible={saving} size={96} swing={26} />
+      </>
     );
   }
 
@@ -477,11 +478,8 @@ export default function ProfileOnboardingFlow({ user, onFinished }: ProfileOnboa
             onChangeText={setBudgetMax}
           />
         </View>
-        {saving ? (
-          <BuckyLoading size={92} swing={26} />
-        ) : (
-          footer(false)
-        )}
+        {saving ? null : footer(false)}
+        <FullscreenBuckyLoading visible={saving} size={96} swing={26} />
       </View>
     );
   }

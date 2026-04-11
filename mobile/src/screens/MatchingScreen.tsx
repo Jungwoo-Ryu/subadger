@@ -21,7 +21,7 @@ import Animated, {
   runOnJS,
 } from "react-native-reanimated";
 
-import { BuckyLoading } from "../components/BuckyLoading";
+import { FullscreenBuckyLoading } from "../components/FullscreenBuckyLoading";
 import { colors, radii, space, type as t } from "../theme";
 import { fetchFeed, getFallbackUserId, postSwipe, type FeedListing } from "../api";
 import { useAuth } from "../context/AuthContext";
@@ -160,10 +160,7 @@ export function MatchingScreen() {
       </View>
 
       {!authReady || loading ? (
-        <View style={styles.center}>
-          <BuckyLoading size={100} swing={28} />
-          <Text style={[t.caption, { marginTop: 12 }]}>Loading listings…</Text>
-        </View>
+        <View style={{ flex: 1 }} />
       ) : err ? (
         <View style={styles.center}>
           <Text style={styles.err}>{err}</Text>
@@ -195,6 +192,13 @@ export function MatchingScreen() {
           </View>
         </View>
       )}
+
+      <FullscreenBuckyLoading
+        visible={!authReady || loading}
+        size={100}
+        swing={28}
+        message="Loading listings…"
+      />
 
       <Modal visible={noteOpen} transparent animationType="fade">
         <View style={styles.modalBg}>

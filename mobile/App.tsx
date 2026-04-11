@@ -35,6 +35,7 @@ import OwnerAuthScreen from './src/screens/OwnerAuthScreen';
 import ProfileOnboardingFlow from './src/screens/ProfileOnboardingFlow';
 import { profileOnboardingKey } from './src/storageKeys';
 import { BuckyLoading } from './src/components/BuckyLoading';
+import { FullscreenBuckyLoading } from './src/components/FullscreenBuckyLoading';
 import { type AuthRole, type AuthUser, mapSupabaseUser, signOut as signOutUser } from './src/lib/auth';
 import { ensureProfileRecord } from './src/lib/profile';
 import { supabase } from './src/lib/supabase';
@@ -985,9 +986,9 @@ function DashboardHeader({
 
 function LoadingScreen({ label }: { label: string }) {
   return (
-    <View style={styles.loadingScreen}>
+    <View style={[styles.loadingScreen, styles.loadingScreenDim]}>
       <BuckyLoading size={112} swing={32} />
-      <Text style={styles.loadingText}>{label}</Text>
+      <Text style={styles.loadingTextOnDim}>{label}</Text>
     </View>
   );
 }
@@ -1127,37 +1128,36 @@ function LikesFromApi({
       : <SuperLikeHighlightList items={superReceived} variant="received" />;
 
   return (
-    <ScrollView
-      style={styles.utilityScroll}
-      contentContainerStyle={styles.utilityScrollContent}
-      showsVerticalScrollIndicator={false}
-    >
-      <UtilityTabHeader
-        title="Likes"
-        subtitle="Review likes with optional notes, then accept or decline. Accepting opens a chat."
-      />
-      {superStrip}
-      <View style={styles.likesSegmentRow}>
-        <TouchableOpacity
-          style={[styles.likesSegmentBtn, tab === 'sent' && styles.likesSegmentBtnActive]}
-          onPress={() => setTab('sent')}
-        >
-          <Text style={[styles.likesSegmentLabel, tab === 'sent' && styles.likesSegmentLabelActive]}>
-            {role === 'seeker' ? 'Sent to listings' : 'Sent'}
-          </Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={[styles.likesSegmentBtn, tab === 'received' && styles.likesSegmentBtnActive]}
-          onPress={() => setTab('received')}
-        >
-          <Text style={[styles.likesSegmentLabel, tab === 'received' && styles.likesSegmentLabelActive]}>
-            {role === 'seeker' ? 'Received' : 'Received'}
-          </Text>
-        </TouchableOpacity>
-      </View>
-      {loading ? (
-        <BuckyLoading size={88} swing={24} />
-      ) : items.length === 0 ? (
+    <>
+      <ScrollView
+        style={styles.utilityScroll}
+        contentContainerStyle={styles.utilityScrollContent}
+        showsVerticalScrollIndicator={false}
+      >
+        <UtilityTabHeader
+          title="Likes"
+          subtitle="Review likes with optional notes, then accept or decline. Accepting opens a chat."
+        />
+        {superStrip}
+        <View style={styles.likesSegmentRow}>
+          <TouchableOpacity
+            style={[styles.likesSegmentBtn, tab === 'sent' && styles.likesSegmentBtnActive]}
+            onPress={() => setTab('sent')}
+          >
+            <Text style={[styles.likesSegmentLabel, tab === 'sent' && styles.likesSegmentLabelActive]}>
+              {role === 'seeker' ? 'Sent to listings' : 'Sent'}
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.likesSegmentBtn, tab === 'received' && styles.likesSegmentBtnActive]}
+            onPress={() => setTab('received')}
+          >
+            <Text style={[styles.likesSegmentLabel, tab === 'received' && styles.likesSegmentLabelActive]}>
+              {role === 'seeker' ? 'Received' : 'Received'}
+            </Text>
+          </TouchableOpacity>
+        </View>
+        {loading ? null : items.length === 0 ? (
         <Text style={styles.likesEmptyApi}>No items yet.</Text>
       ) : (
         <View style={styles.likesSectionCard}>
@@ -1244,7 +1244,9 @@ function LikesFromApi({
           ))}
         </View>
       )}
-    </ScrollView>
+      </ScrollView>
+      <FullscreenBuckyLoading visible={loading} size={96} swing={26} />
+    </>
   );
 }
 
@@ -1417,14 +1419,13 @@ function ProfileTabWithApi({
   };
 
   return (
-    <ScrollView style={styles.utilityScroll} contentContainerStyle={styles.utilityScrollContent}>
-      <UtilityTabHeader
-        title="Profile"
-        subtitle="Edit your profile and preferences. Completeness helps others trust your account."
-      />
-      {loading ? (
-        <BuckyLoading size={96} swing={28} />
-      ) : pct == null ? (
+    <>
+      <ScrollView style={styles.utilityScroll} contentContainerStyle={styles.utilityScrollContent}>
+        <UtilityTabHeader
+          title="Profile"
+          subtitle="Edit your profile and preferences. Completeness helps others trust your account."
+        />
+        {loading ? null : pct == null ? (
         <View style={{ marginTop: 16, gap: 16 }}>
           <Text style={styles.profileErrorText}>{loadError ?? 'Could not load profile.'}</Text>
           {profileMissing && syncProfileFromAuth ? (
@@ -1598,15 +1599,13 @@ function ProfileTabWithApi({
             disabled={saving}
             activeOpacity={0.85}
           >
-            {saving ? (
-              <ActivityIndicator color="#FFF" />
-            ) : (
-              <Text style={styles.profileSaveBtnText}>Save changes</Text>
-            )}
+            <Text style={styles.profileSaveBtnText}>{saving ? 'Saving…' : 'Save changes'}</Text>
           </TouchableOpacity>
         </>
       )}
-    </ScrollView>
+      </ScrollView>
+      <FullscreenBuckyLoading visible={loading || saving} size={100} swing={28} />
+    </>
   );
 }
 
@@ -2002,9 +2001,10 @@ function ChatTabFromApi({
 
   if (loading && list.length === 0) {
     return (
-      <View style={[styles.chatScreen, { justifyContent: 'center' }]}>
-        <BuckyLoading size={96} swing={28} />
-      </View>
+      <>
+        <View style={[styles.chatScreen, { backgroundColor: '#0a0a0a' }]} />
+        <FullscreenBuckyLoading visible size={100} swing={28} />
+      </>
     );
   }
 
@@ -2086,41 +2086,37 @@ function ChatTabFromApi({
         </View>
       </View>
 
-      {msgLoading ? (
-        <BuckyLoading size={80} swing={22} />
-      ) : (
-        <ScrollView
-          style={styles.chatConversationMessages}
-          contentContainerStyle={styles.chatConversationMessagesContent}
-          showsVerticalScrollIndicator={false}
-        >
-          {messages.map(m => {
-            const isSelf = m.sender_id === userId;
-            const text = chatBubbleTextFromApi(m.body);
-            return (
+      <ScrollView
+        style={styles.chatConversationMessages}
+        contentContainerStyle={styles.chatConversationMessagesContent}
+        showsVerticalScrollIndicator={false}
+      >
+        {messages.map(m => {
+          const isSelf = m.sender_id === userId;
+          const text = chatBubbleTextFromApi(m.body);
+          return (
+            <View
+              key={m.id}
+              style={[
+                styles.chatMessageRow,
+                isSelf ? styles.chatMessageRowSelf : styles.chatMessageRowOther,
+              ]}
+            >
               <View
-                key={m.id}
                 style={[
-                  styles.chatMessageRow,
-                  isSelf ? styles.chatMessageRowSelf : styles.chatMessageRowOther,
+                  styles.chatBubble,
+                  isSelf ? styles.chatBubbleSelf : styles.chatBubbleOther,
                 ]}
               >
-                <View
-                  style={[
-                    styles.chatBubble,
-                    isSelf ? styles.chatBubbleSelf : styles.chatBubbleOther,
-                  ]}
-                >
-                  <Text style={[styles.chatBubbleText, isSelf && styles.chatBubbleTextSelf]}>{text}</Text>
-                </View>
-                <Text style={[styles.chatMessageTime, isSelf && styles.chatMessageTimeSelf]}>
-                  {new Date(m.created_at).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })}
-                </Text>
+                <Text style={[styles.chatBubbleText, isSelf && styles.chatBubbleTextSelf]}>{text}</Text>
               </View>
-            );
-          })}
-        </ScrollView>
-      )}
+              <Text style={[styles.chatMessageTime, isSelf && styles.chatMessageTimeSelf]}>
+                {new Date(m.created_at).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })}
+              </Text>
+            </View>
+          );
+        })}
+      </ScrollView>
 
       <View style={styles.chatComposer}>
         <TextInput
@@ -2153,6 +2149,7 @@ function ChatTabFromApi({
           </Text>
         </TouchableOpacity>
       </View>
+      <FullscreenBuckyLoading visible={msgLoading} size={92} swing={24} />
     </View>
   );
 }
@@ -3007,15 +3004,24 @@ const styles = StyleSheet.create({
   },
   loadingScreen: {
     flex: 1,
-    backgroundColor: '#FFF',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 12,
+  },
+  loadingScreenDim: {
+    backgroundColor: 'rgba(0,0,0,0.42)',
   },
   loadingText: {
     fontSize: 15,
     fontWeight: '600',
     color: '#444',
+  },
+  loadingTextOnDim: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: 'rgba(255,255,255,0.92)',
+    textAlign: 'center',
+    paddingHorizontal: 32,
   },
 
   // Header (just logout button, overlaid on the card)

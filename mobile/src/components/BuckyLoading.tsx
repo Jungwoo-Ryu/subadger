@@ -55,6 +55,5 @@ const styles = StyleSheet.create({
   wrap: {
     alignItems: 'center',
     justifyContent: 'center',
-    minHeight: 120,
   },
 });

@@ -4,6 +4,7 @@ from uuid import UUID
 from fastapi import APIRouter, HTTPException, Query
 
 from db import connection
+from listing_sql import LISTING_DISPLAY_TITLE
 from schemas import SuperLikeListItem, SuperLikeListResponse, SuperLikeRequest, SuperLikeResponse
 
 router = APIRouter(prefix="/v1", tags=["super-like"])
@@ -57,13 +58,13 @@ def list_super_likes_received(user_id: UUID = Query(...)):
     with connection() as conn:
         with conn.cursor() as cur:
             cur.execute(
-                """
+                f"""
                 SELECT
                   s.id AS super_like_id,
                   s.listing_id,
                   s.body,
                   s.created_at,
-                  COALESCE(NULLIF(btrim(l.title), ''), left(l.address, 80)) AS title,
+                  {LISTING_DISPLAY_TITLE} AS title,
                   l.address,
                   l.price_monthly,
                   p.display_name AS counterparty_name
@@ -99,13 +100,13 @@ def list_super_likes_sent(user_id: UUID = Query(...)):
     with connection() as conn:
         with conn.cursor() as cur:
             cur.execute(
-                """
+                f"""
                 SELECT
                   s.id AS super_like_id,
                   s.listing_id,
                   s.body,
                   s.created_at,
-                  COALESCE(NULLIF(btrim(l.title), ''), left(l.address, 80)) AS title,
+                  {LISTING_DISPLAY_TITLE} AS title,
                   l.address,
                   l.price_monthly,
                   p.display_name AS counterparty_name
