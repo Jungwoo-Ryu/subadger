@@ -92,7 +92,29 @@ def dsn() -> str:
     return normalized
 
 
+def _pooler_hint_for_operational_error(exc: BaseException) -> str | None:
+    """Vercel/serverless often cannot open IPv6 to direct db.*.supabase.co:5432."""
+    s = str(exc)
+    low = s.lower()
+    if "pooler.supabase.com" in low or ":6543" in s:
+        return None
+    if "cannot assign requested address" not in low and "connection is bad" not in low:
+        return None
+    if "supabase" not in low and "2600:" not in s and "2a05:" not in s:
+        return None
+    return (
+        " On Vercel/serverless, set DATABASE_URL to the Supabase Transaction pooler URI "
+        "(Dashboard → Database → Connection string → Transaction pooler, port 6543, …pooler.supabase.com)."
+    )
+
+
 @contextmanager
 def connection() -> Generator[psycopg.Connection, None, None]:
-    with psycopg.connect(dsn(), row_factory=dict_row) as conn:
-        yield conn
+    try:
+        with psycopg.connect(dsn(), row_factory=dict_row) as conn:
+            yield conn
+    except psycopg.OperationalError as e:
+        hint = _pooler_hint_for_operational_error(e)
+        if hint:
+            raise psycopg.OperationalError(f"{e}{hint}") from e
+        raise
