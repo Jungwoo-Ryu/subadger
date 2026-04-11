@@ -116,21 +116,20 @@ async function ensureProfilesRow(user: AuthUser): Promise<ProfileTable> {
   return 'profiles';
 }
 
+/**
+ * Ensures `public.profiles` exists for the signed-in user (required by the FastAPI API).
+ * Tries `profiles` first — this repo's Supabase schema has no `public.users` table.
+ */
 export async function ensureProfileRecord(user: AuthUser): Promise<ProfileTable> {
-  const attempts = [ensureUsersRow, ensureProfilesRow];
-  const errors: unknown[] = [];
-
-  for (const attempt of attempts) {
+  try {
+    return await ensureProfilesRow(user);
+  } catch (profilesErr) {
     try {
-      return await attempt(user);
-    } catch (error) {
-      errors.push(error);
+      return await ensureUsersRow(user);
+    } catch {
+      throw new Error(
+        `Could not create profiles row for ${user.email}. ${profilesErr instanceof Error ? profilesErr.message : String(profilesErr)}`,
+      );
     }
   }
-
-  throw new Error(
-    `Could not ensure an app profile row for ${user.email}. ${errors
-      .map((error) => (error instanceof Error ? error.message : String(error)))
-      .join(' | ')}`,
-  );
 }

@@ -16,6 +16,7 @@ import {
   ScrollView,
   TextInput,
 } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import MapView, { Marker } from 'react-native-maps';
@@ -31,9 +32,36 @@ import {
 import RoleSelectionScreen from './src/screens/RoleSelectionScreen';
 import SeekerAuthScreen from './src/screens/SeekerAuthScreen';
 import OwnerAuthScreen from './src/screens/OwnerAuthScreen';
+import ProfileOnboardingFlow from './src/screens/ProfileOnboardingFlow';
+import { profileOnboardingKey } from './src/storageKeys';
 import { type AuthRole, type AuthUser, mapSupabaseUser, signOut as signOutUser } from './src/lib/auth';
 import { ensureProfileRecord } from './src/lib/profile';
 import { supabase } from './src/lib/supabase';
+import {
+  fetchChatMessages,
+  fetchConversations,
+  fetchFeed,
+  fetchLikesReceived,
+  fetchLikesSent,
+  fetchProfileCompleteness,
+  fetchProfileMe,
+  getExpoPublicApiUrl,
+  patchProfileMe,
+  patchSeekerPrefsMe,
+  fetchSuperLikesReceived,
+  fetchSuperLikesSent,
+  mapFeedListingToProperty,
+  popFeedStack,
+  postChatMessage,
+  postInterestRespond,
+  postSuperLike,
+  postSwipe,
+  pushFeedStack,
+  type ChatMessageDto,
+  type ConversationSummaryDto,
+  type LikeItemDto,
+  type SuperLikeItemDto,
+} from './src/api/subadgerApi';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 const CARD_WIDTH = SCREEN_WIDTH;
@@ -41,8 +69,16 @@ const TAB_BAR_HEIGHT = Platform.OS === 'ios' ? 80 : 70;
 const CARD_HEIGHT = SCREEN_HEIGHT - TAB_BAR_HEIGHT - 12;
 const SWIPE_THRESHOLD = SCREEN_WIDTH * 0.3;
 
+const USE_API_FEED = Boolean((process.env.EXPO_PUBLIC_API_URL || '').trim());
+
 // ─── Auth types ──────────────────────────────────────────────────────────────
-type AuthScreen = 'role-select' | 'seeker-auth' | 'owner-auth' | 'dashboard';
+type AuthScreen =
+  | 'role-select'
+  | 'guest-dashboard'
+  | 'seeker-auth'
+  | 'owner-auth'
+  | 'profile-onboarding'
+  | 'dashboard';
 type DashboardTab = 'explore' | 'likes' | 'chat' | 'profile';
 type LikeSectionKey = 'received' | 'sent' | 'offer';
 
@@ -346,17 +382,31 @@ function GenderTag({ gender }: { gender: string }) {
 }
 
 // ─── Property Card Content ────────────────────────────────────────────────────
-function PropertyCardContent({ property, onShowDetail, onNope, onLike }: { property: Property; onShowDetail?: () => void; onNope?: () => void; onLike?: () => void }) {
+function PropertyCardContent({
+  property,
+  onShowDetail,
+  onNope,
+  onLike,
+  onSuperLike,
+}: {
+  property: Property;
+  onShowDetail?: () => void;
+  onNope?: () => void;
+  onLike?: () => void;
+  onSuperLike?: () => void;
+}) {
   return (
     <View style={styles.cardInner}>
       <ImageCarousel imageUrls={property.imageUrls} />
       <LinearGradient colors={['rgba(0,0,0,0.6)', 'rgba(0,0,0,0)']} style={styles.topGradient} />
       <LinearGradient colors={['transparent', 'rgba(0,0,0,0.4)', 'rgba(0,0,0,0.8)', '#000']} style={styles.gradient} />
       <View style={styles.cardInfo}>
-        <Text style={styles.apartmentName} numberOfLines={1}>{property.apartmentName}</Text>
-        <Text style={styles.address} numberOfLines={1}>
-          📍 {property.address}
+        <Text style={styles.apartmentName} numberOfLines={2}>{property.apartmentName}</Text>
+        <View style={styles.cardInfoDivider} />
+        <Text style={styles.address} numberOfLines={2}>
+          {property.address}
         </Text>
+        <View style={styles.cardInfoDivider} />
         <Text style={styles.subletPrice}>${property.subletPrice}/mo</Text>
       </View>
       {/* Detail expand button */}
@@ -365,12 +415,23 @@ function PropertyCardContent({ property, onShowDetail, onNope, onLike }: { prope
           <Ionicons name="chevron-up" size={18} color="#FFF" />
         </TouchableOpacity>
       )}
-      {/* Action buttons inside card */}
+      {/* Action buttons — bottom of swipe card (Like / No + optional Super) */}
       {onNope && onLike && (
         <View style={styles.actions} pointerEvents="box-none">
           <TouchableOpacity style={[styles.actionBtn, styles.actionNope]} onPress={onNope} activeOpacity={0.85}>
             <Ionicons name="close" size={38} color={COLORS.danger} />
           </TouchableOpacity>
+          {onSuperLike ? (
+            <TouchableOpacity
+              style={[styles.actionBtn, styles.actionSuper]}
+              onPress={onSuperLike}
+              activeOpacity={0.85}
+            >
+              <Ionicons name="star" size={30} color="#FFD54F" />
+            </TouchableOpacity>
+          ) : (
+            <View style={styles.actionSuperSpacer} />
+          )}
           <TouchableOpacity style={[styles.actionBtn, styles.actionLike]} onPress={onLike} activeOpacity={0.85}>
             <Ionicons name="heart" size={34} color={COLORS.success} />
           </TouchableOpacity>
@@ -869,22 +930,54 @@ const SwipeCard = forwardRef<SwipeCardRef, SwipeCardProps>(({ index, onSwipedLef
 });
 
 // ─── Dashboard Header (with logout) ──────────────────────────────────────────
-function DashboardHeader({ onLogout, isLoggingOut }: { onLogout: () => void; isLoggingOut: boolean }) {
+function DashboardHeader({
+  onLogout,
+  isLoggingOut,
+  onBack,
+  showBack,
+  isGuest,
+  onGuestLogin,
+  onGuestBack,
+}: {
+  onLogout: () => void;
+  isLoggingOut: boolean;
+  onBack?: () => void;
+  showBack?: boolean;
+  isGuest?: boolean;
+  onGuestLogin?: () => void;
+  onGuestBack?: () => void;
+}) {
   return (
     <View style={styles.header}>
-      <View />
-      <TouchableOpacity
-        style={styles.logoutBtn}
-        onPress={onLogout}
-        activeOpacity={0.8}
-        disabled={isLoggingOut}
-      >
-        {isLoggingOut ? (
-          <ActivityIndicator color="#FFF" size="small" />
-        ) : (
-          <Ionicons name="log-out-outline" size={20} color="#FFF" />
-        )}
-      </TouchableOpacity>
+      {isGuest && onGuestBack ? (
+        <TouchableOpacity style={styles.headerIconBtn} onPress={onGuestBack} activeOpacity={0.8}>
+          <Ionicons name="chevron-back" size={26} color="#FFF" />
+        </TouchableOpacity>
+      ) : showBack && onBack ? (
+        <TouchableOpacity style={styles.headerIconBtn} onPress={onBack} activeOpacity={0.8}>
+          <Ionicons name="chevron-back" size={26} color="#FFF" />
+        </TouchableOpacity>
+      ) : (
+        <View style={styles.headerIconBtn} />
+      )}
+      {isGuest && onGuestLogin ? (
+        <TouchableOpacity style={styles.headerLoginBtn} onPress={onGuestLogin} activeOpacity={0.85}>
+          <Text style={styles.headerLoginBtnText}>Log in · Sign up</Text>
+        </TouchableOpacity>
+      ) : (
+        <TouchableOpacity
+          style={styles.logoutBtn}
+          onPress={onLogout}
+          activeOpacity={0.8}
+          disabled={isLoggingOut}
+        >
+          {isLoggingOut ? (
+            <ActivityIndicator color="#FFF" size="small" />
+          ) : (
+            <Ionicons name="log-out-outline" size={20} color="#FFF" />
+          )}
+        </TouchableOpacity>
+      )}
     </View>
   );
 }
@@ -946,6 +1039,569 @@ function UtilityTabHeader({ title, subtitle }: { title: string; subtitle: string
       <Text style={styles.utilityHeaderTitle}>{title}</Text>
       <Text style={styles.utilityHeaderSubtitle}>{subtitle}</Text>
     </View>
+  );
+}
+
+function SuperLikeHighlightList({ items, variant }: { items: SuperLikeItemDto[]; variant: 'sent' | 'received' }) {
+  if (items.length === 0) return null;
+  const title = variant === 'received' ? 'Super Like received' : 'Super Like sent';
+  return (
+    <View style={styles.superLikeHighlightBlock}>
+      <Text style={styles.superLikeHighlightTitle}>{title}</Text>
+      {items.map(it => (
+        <View key={it.super_like_id} style={styles.superLikeHighlightCard}>
+          <Text style={styles.superLikeHighlightListing} numberOfLines={1}>
+            {it.title}
+          </Text>
+          <Text style={styles.superLikeHighlightFrom} numberOfLines={1}>
+            {variant === 'received' ? `from ${it.counterparty_name}` : `to ${it.counterparty_name}`}
+          </Text>
+          <Text style={styles.superLikeHighlightBody} numberOfLines={3}>
+            {it.body}
+          </Text>
+          <Text style={styles.superLikeHighlightMeta}>
+            ${it.price_monthly}/mo · {it.address}
+          </Text>
+        </View>
+      ))}
+    </View>
+  );
+}
+
+function likeNotePreview(note: string | null | undefined): string {
+  const t = (note ?? '').trim();
+  return t.length > 0 ? t : 'Like without a message';
+}
+
+function LikesFromApi({
+  userId,
+  role,
+  onOpenChat,
+}: {
+  userId: string;
+  role: 'seeker' | 'host';
+  onOpenChat?: (conversationId: string) => void;
+}) {
+  const [tab, setTab] = React.useState<'sent' | 'received'>('sent');
+  const [items, setItems] = React.useState<LikeItemDto[]>([]);
+  const [superSent, setSuperSent] = React.useState<SuperLikeItemDto[]>([]);
+  const [superReceived, setSuperReceived] = React.useState<SuperLikeItemDto[]>([]);
+  const [loading, setLoading] = React.useState(true);
+  const [refreshKey, setRefreshKey] = React.useState(0);
+  const [busyInterestId, setBusyInterestId] = React.useState<string | null>(null);
+
+  React.useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      setLoading(true);
+      try {
+        const [res, supS, supR] = await Promise.all([
+          tab === 'sent' ? fetchLikesSent(userId) : fetchLikesReceived(userId),
+          fetchSuperLikesSent(userId).catch(() => ({ items: [] as SuperLikeItemDto[] })),
+          fetchSuperLikesReceived(userId).catch(() => ({ items: [] as SuperLikeItemDto[] })),
+        ]);
+        if (!cancelled) {
+          setItems(res.items);
+          setSuperSent(supS.items);
+          setSuperReceived(supR.items);
+        }
+      } catch {
+        if (!cancelled) {
+          setItems([]);
+          setSuperSent([]);
+          setSuperReceived([]);
+        }
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [tab, userId, refreshKey]);
+
+  const superStrip =
+    role === 'seeker'
+      ? <SuperLikeHighlightList items={superSent} variant="sent" />
+      : <SuperLikeHighlightList items={superReceived} variant="received" />;
+
+  return (
+    <ScrollView
+      style={styles.utilityScroll}
+      contentContainerStyle={styles.utilityScrollContent}
+      showsVerticalScrollIndicator={false}
+    >
+      <UtilityTabHeader
+        title="Likes"
+        subtitle="Review likes with optional notes, then accept or decline. Accepting opens a chat."
+      />
+      {superStrip}
+      <View style={styles.likesSegmentRow}>
+        <TouchableOpacity
+          style={[styles.likesSegmentBtn, tab === 'sent' && styles.likesSegmentBtnActive]}
+          onPress={() => setTab('sent')}
+        >
+          <Text style={[styles.likesSegmentLabel, tab === 'sent' && styles.likesSegmentLabelActive]}>
+            {role === 'seeker' ? 'Sent to listings' : 'Sent'}
+          </Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.likesSegmentBtn, tab === 'received' && styles.likesSegmentBtnActive]}
+          onPress={() => setTab('received')}
+        >
+          <Text style={[styles.likesSegmentLabel, tab === 'received' && styles.likesSegmentLabelActive]}>
+            {role === 'seeker' ? 'Received' : 'Received'}
+          </Text>
+        </TouchableOpacity>
+      </View>
+      {loading ? (
+        <ActivityIndicator color={COLORS.primary} style={{ marginTop: 24 }} />
+      ) : items.length === 0 ? (
+        <Text style={styles.likesEmptyApi}>No items yet.</Text>
+      ) : (
+        <View style={styles.likesSectionCard}>
+          {items.map((it, index) => (
+            <View
+              key={it.interest_id}
+              style={[styles.likeItemRow, index < items.length - 1 && styles.likeItemRowBorder]}
+            >
+              <Image
+                source={{ uri: it.photo_url || 'https://images.unsplash.com/photo-1522708323590-d24dbb6b0267?w=200' }}
+                style={styles.likeAvatar}
+              />
+              <View style={styles.likeItemBody}>
+                <Text style={styles.likeItemName} numberOfLines={1}>
+                  {tab === 'received' ? it.counterparty_name : it.title}
+                </Text>
+                <Text style={styles.likeItemDetail} numberOfLines={2}>
+                  {tab === 'received' ? `${it.title} · ${it.address}` : it.address}
+                </Text>
+                <Text style={styles.likeItemHeadline} numberOfLines={3}>
+                  {tab === 'sent'
+                    ? `${likeNotePreview(it.note)} → ${it.counterparty_name}`
+                    : likeNotePreview(it.note)}
+                </Text>
+                {tab === 'received' && it.state === 'pending' ? (
+                  <View style={styles.likeItemActions}>
+                    <TouchableOpacity
+                      style={[styles.likeActionPill, styles.likeActionDecline]}
+                      disabled={busyInterestId === it.interest_id}
+                      onPress={async () => {
+                        setBusyInterestId(it.interest_id);
+                        try {
+                          await postInterestRespond(it.interest_id, { user_id: userId, action: 'decline' });
+                          setRefreshKey(k => k + 1);
+                        } catch (e) {
+                          Alert.alert('Decline', e instanceof Error ? e.message : 'Failed');
+                        } finally {
+                          setBusyInterestId(null);
+                        }
+                      }}
+                    >
+                      <Text style={styles.likeActionPillText}>Decline</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={[styles.likeActionPill, styles.likeActionAccept]}
+                      disabled={busyInterestId === it.interest_id}
+                      onPress={async () => {
+                        setBusyInterestId(it.interest_id);
+                        try {
+                          const r = await postInterestRespond(it.interest_id, {
+                            user_id: userId,
+                            action: 'accept',
+                          });
+                          setRefreshKey(k => k + 1);
+                          if (r.conversation_id && onOpenChat) {
+                            onOpenChat(r.conversation_id);
+                          } else {
+                            Alert.alert('Match', 'Chat is open. Check the Chat tab.');
+                          }
+                        } catch (e) {
+                          Alert.alert('Accept', e instanceof Error ? e.message : 'Failed');
+                        } finally {
+                          setBusyInterestId(null);
+                        }
+                      }}
+                    >
+                      <Text style={[styles.likeActionPillText, styles.likeActionAcceptText]}>Accept</Text>
+                    </TouchableOpacity>
+                  </View>
+                ) : null}
+                {tab === 'received' && it.state === 'accepted' && it.conversation_id && onOpenChat ? (
+                  <TouchableOpacity
+                    style={styles.likeOpenChatBtn}
+                    onPress={() => onOpenChat(it.conversation_id!)}
+                  >
+                    <Text style={styles.likeOpenChatBtnText}>Open chat</Text>
+                  </TouchableOpacity>
+                ) : null}
+              </View>
+              <View style={styles.likeItemBadge}>
+                <Text style={styles.likeItemBadgeText}>${it.price_monthly}</Text>
+              </View>
+            </View>
+          ))}
+        </View>
+      )}
+    </ScrollView>
+  );
+}
+
+const PROFILE_HINT_EN: Record<string, string> = {
+  display_name: 'Display name',
+  avatar_url: 'Profile photo URL',
+  email: 'Email',
+  school_email_verified: 'School email verified',
+  grade_or_affiliation: 'Year / affiliation',
+  seeker_budget: 'Budget range',
+  seeker_stay_window: 'Stay dates',
+  preferred_area: 'Preferred area',
+  seeker_profile: 'Seeker preferences',
+  roommate_prefs: 'Roommate preferences',
+  role_or_seeker_prefs: 'Role / preferences',
+};
+
+function ProfileTabWithApi({
+  userId,
+  authRole,
+  syncProfileFromAuth,
+}: {
+  userId: string;
+  authRole: 'seeker' | 'owner';
+  /** Creates public.profiles via Supabase when the API returns 404 (existing accounts before trigger). */
+  syncProfileFromAuth?: () => Promise<void>;
+}) {
+  const isSeeker = authRole === 'seeker';
+  const [loading, setLoading] = React.useState(true);
+  const [saving, setSaving] = React.useState(false);
+  const [pct, setPct] = React.useState<number | null>(null);
+  const [missing, setMissing] = React.useState<string[]>([]);
+  const [loadError, setLoadError] = React.useState<string | null>(null);
+  const [profileMissing, setProfileMissing] = React.useState(false);
+  const [schoolVerified, setSchoolVerified] = React.useState(false);
+
+  const [email, setEmail] = React.useState('');
+  const [displayName, setDisplayName] = React.useState('');
+  const [avatarUrl, setAvatarUrl] = React.useState('');
+  const [schoolEmail, setSchoolEmail] = React.useState('');
+  const [gradeOrYear, setGradeOrYear] = React.useState('');
+  const [affiliation, setAffiliation] = React.useState('');
+  const [roommateNotes, setRoommateNotes] = React.useState('');
+
+  const [budgetMin, setBudgetMin] = React.useState('');
+  const [budgetMax, setBudgetMax] = React.useState('');
+  const [stayStart, setStayStart] = React.useState('');
+  const [stayEnd, setStayEnd] = React.useState('');
+  const [roomTypePref, setRoomTypePref] = React.useState('');
+  const [genderPref, setGenderPref] = React.useState('');
+  const [neighborhoodsCsv, setNeighborhoodsCsv] = React.useState('');
+
+  const load = React.useCallback(async () => {
+    setLoading(true);
+    setLoadError(null);
+    setProfileMissing(false);
+    try {
+      const [me, comp] = await Promise.all([
+        fetchProfileMe(userId),
+        fetchProfileCompleteness(userId),
+      ]);
+      setPct(comp.percent);
+      setMissing(comp.missing);
+      setEmail(me.email);
+      setDisplayName(me.display_name ?? '');
+      setAvatarUrl(me.avatar_url ?? '');
+      setSchoolEmail(me.school_email ?? '');
+      setSchoolVerified(Boolean(me.school_email_verified_at));
+      setGradeOrYear(me.grade_or_year ?? '');
+      setAffiliation(me.affiliation ?? '');
+      const rm = me.roommate_prefs as { notes?: string };
+      setRoommateNotes(typeof rm?.notes === 'string' ? rm.notes : '');
+      if (me.seeker) {
+        setBudgetMin(String(me.seeker.budget_min));
+        setBudgetMax(String(me.seeker.budget_max));
+        setStayStart(me.seeker.stay_start_date.slice(0, 10));
+        setStayEnd(me.seeker.stay_end_date.slice(0, 10));
+        setRoomTypePref(me.seeker.room_type_pref ?? '');
+        setGenderPref(me.seeker.gender_pref ?? '');
+        const pn = me.seeker.prefs?.preferred_neighborhoods;
+        setNeighborhoodsCsv(Array.isArray(pn) ? (pn as string[]).join(', ') : '');
+      }
+    } catch (e) {
+      setPct(null);
+      const raw = e instanceof Error ? e.message : String(e);
+      const apiUrl = getExpoPublicApiUrl();
+      if (!apiUrl || raw.includes('EXPO_PUBLIC_API_URL')) {
+        setLoadError(
+          'EXPO_PUBLIC_API_URL is not set. Copy mobile/.env.example to mobile/.env, set the FastAPI URL, then restart Expo with: npx expo start -c',
+        );
+      } else if (/network request failed|failed to fetch|networkerror/i.test(raw)) {
+        setLoadError(
+          `Cannot reach the API (${apiUrl}).\n\n` +
+            '• Start the backend from the repo: cd backend && uvicorn main:app --host 0.0.0.0 --port 8000\n' +
+            '• iOS Simulator: http://127.0.0.1:8000 in .env is usually correct.\n' +
+            '• Physical device: use your computer Wi‑Fi IP (e.g. http://192.168.0.12:8000), not localhost.\n' +
+            '• After changing .env, run: npx expo start -c',
+        );
+      } else if (/^404\b/.test(raw.trim()) || /profile not found/i.test(raw)) {
+        setProfileMissing(true);
+        setLoadError(
+          'No profile row in the database for this account yet. Tap “Sync profile” to create it from your login, or apply the Supabase migration that auto-creates profiles on sign-up.',
+        );
+      } else {
+        setLoadError(raw);
+      }
+    } finally {
+      setLoading(false);
+    }
+  }, [userId]);
+
+  React.useEffect(() => {
+    void load();
+  }, [load]);
+
+  const saveProfile = async () => {
+    setSaving(true);
+    try {
+      const roommate_prefs =
+        roommateNotes.trim().length > 0 ? { notes: roommateNotes.trim() } : {};
+      await patchProfileMe({
+        user_id: userId,
+        display_name: displayName.trim() || null,
+        avatar_url: avatarUrl.trim() || null,
+        school_email: schoolEmail.trim() || null,
+        grade_or_year: gradeOrYear.trim() || null,
+        affiliation: affiliation.trim() || null,
+        roommate_prefs,
+      });
+
+      if (isSeeker) {
+        const bmin = parseInt(budgetMin.trim(), 10);
+        const bmax = parseInt(budgetMax.trim(), 10);
+        if (Number.isNaN(bmin) || Number.isNaN(bmax) || bmin < 0 || bmax < bmin) {
+          Alert.alert('Validation', 'Enter valid monthly budget min and max (numbers).');
+          setSaving(false);
+          return;
+        }
+        const start = stayStart.trim();
+        const end = stayEnd.trim();
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(start) || !/^\d{4}-\d{2}-\d{2}$/.test(end)) {
+          Alert.alert('Validation', 'Stay dates must be YYYY-MM-DD.');
+          setSaving(false);
+          return;
+        }
+        const nh = neighborhoodsCsv.split(',').map(s => s.trim()).filter(Boolean);
+        await patchSeekerPrefsMe({
+          user_id: userId,
+          budget_min: bmin,
+          budget_max: bmax,
+          stay_start_date: start,
+          stay_end_date: end,
+          room_type_pref: roomTypePref.trim() || null,
+          gender_pref: genderPref.trim() || null,
+          prefs: nh.length ? { preferred_neighborhoods: nh } : { preferred_neighborhoods: [] },
+        });
+      }
+
+      await load();
+      Alert.alert('Saved', 'Your profile has been updated.');
+    } catch (e) {
+      Alert.alert('Error', e instanceof Error ? e.message : 'Could not save.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <ScrollView style={styles.utilityScroll} contentContainerStyle={styles.utilityScrollContent}>
+      <UtilityTabHeader
+        title="Profile"
+        subtitle="Edit your profile and preferences. Completeness helps others trust your account."
+      />
+      {loading ? (
+        <ActivityIndicator color={COLORS.primary} style={{ marginTop: 24 }} />
+      ) : pct == null ? (
+        <View style={{ marginTop: 16, gap: 16 }}>
+          <Text style={styles.profileErrorText}>{loadError ?? 'Could not load profile.'}</Text>
+          {profileMissing && syncProfileFromAuth ? (
+            <TouchableOpacity
+              style={[styles.profileSaveBtn, { marginTop: 0, backgroundColor: '#2A5CAA' }]}
+              onPress={async () => {
+                try {
+                  await syncProfileFromAuth();
+                  await load();
+                } catch (e) {
+                  Alert.alert('Sync failed', e instanceof Error ? e.message : 'Could not create profile.');
+                }
+              }}
+              activeOpacity={0.85}
+            >
+              <Text style={styles.profileSaveBtnText}>Sync profile</Text>
+            </TouchableOpacity>
+          ) : null}
+          <TouchableOpacity style={styles.profileSaveBtn} onPress={() => void load()} activeOpacity={0.85}>
+            <Text style={styles.profileSaveBtnText}>Retry</Text>
+          </TouchableOpacity>
+        </View>
+      ) : (
+        <>
+          <View style={styles.profileCompletenessCard}>
+            <Text style={styles.profileCompletenessTitle}>Profile completeness</Text>
+            <Text style={styles.profileCompletenessPct}>{pct}%</Text>
+            {missing.length > 0 ? (
+              <Text style={styles.profileCompletenessMissing}>
+                Suggested next fields: {missing.map(k => PROFILE_HINT_EN[k] ?? k).join(', ')}
+              </Text>
+            ) : (
+              <Text style={styles.profileCompletenessMissing}>Your profile looks complete.</Text>
+            )}
+          </View>
+
+          <Text style={styles.profileFormSectionTitle}>Account</Text>
+          <Text style={styles.profileFieldLabel}>Email</Text>
+          <Text style={styles.profileReadonlyField}>{email || '—'}</Text>
+
+          <Text style={styles.profileFormSectionTitle}>Public profile</Text>
+          <Text style={styles.profileFieldLabel}>Display name</Text>
+          <TextInput
+            value={displayName}
+            onChangeText={setDisplayName}
+            placeholder="How you appear to others"
+            placeholderTextColor="rgba(255,255,255,0.35)"
+            style={styles.profileFieldInput}
+          />
+          <Text style={styles.profileFieldLabel}>Avatar image URL</Text>
+          <TextInput
+            value={avatarUrl}
+            onChangeText={setAvatarUrl}
+            placeholder="https://… (Supabase Storage public URL)"
+            placeholderTextColor="rgba(255,255,255,0.35)"
+            style={styles.profileFieldInput}
+            autoCapitalize="none"
+          />
+          <Text style={styles.profileFieldLabel}>School email (verification)</Text>
+          <TextInput
+            value={schoolEmail}
+            onChangeText={setSchoolEmail}
+            placeholder="name@school.edu"
+            placeholderTextColor="rgba(255,255,255,0.35)"
+            style={styles.profileFieldInput}
+            autoCapitalize="none"
+            keyboardType="email-address"
+          />
+          {schoolVerified ? (
+            <Text style={styles.profileVerifiedNote}>School email verified</Text>
+          ) : null}
+          <Text style={styles.profileFieldLabel}>Year or class</Text>
+          <TextInput
+            value={gradeOrYear}
+            onChangeText={setGradeOrYear}
+            placeholder="e.g. Junior, Grad student"
+            placeholderTextColor="rgba(255,255,255,0.35)"
+            style={styles.profileFieldInput}
+          />
+          <Text style={styles.profileFieldLabel}>Affiliation</Text>
+          <TextInput
+            value={affiliation}
+            onChangeText={setAffiliation}
+            placeholder="College / program"
+            placeholderTextColor="rgba(255,255,255,0.35)"
+            style={styles.profileFieldInput}
+          />
+          <Text style={styles.profileFieldLabel}>Roommate preferences (notes)</Text>
+          <TextInput
+            value={roommateNotes}
+            onChangeText={setRoommateNotes}
+            placeholder="Quiet, no smoking, etc."
+            placeholderTextColor="rgba(255,255,255,0.35)"
+            style={[styles.profileFieldInput, styles.profileFieldInputMultiline]}
+            multiline
+          />
+
+          {isSeeker ? (
+            <>
+              <Text style={styles.profileFormSectionTitle}>Seeking a place</Text>
+              <Text style={styles.profileFieldLabel}>Budget min / max (per month, USD)</Text>
+              <View style={{ flexDirection: 'row', gap: 10 }}>
+                <TextInput
+                  value={budgetMin}
+                  onChangeText={setBudgetMin}
+                  placeholder="Min"
+                  placeholderTextColor="rgba(255,255,255,0.35)"
+                  style={[styles.profileFieldInput, { flex: 1 }]}
+                  keyboardType="number-pad"
+                />
+                <TextInput
+                  value={budgetMax}
+                  onChangeText={setBudgetMax}
+                  placeholder="Max"
+                  placeholderTextColor="rgba(255,255,255,0.35)"
+                  style={[styles.profileFieldInput, { flex: 1 }]}
+                  keyboardType="number-pad"
+                />
+              </View>
+              <Text style={styles.profileFieldLabel}>Stay window (YYYY-MM-DD)</Text>
+              <TextInput
+                value={stayStart}
+                onChangeText={setStayStart}
+                placeholder="Start"
+                placeholderTextColor="rgba(255,255,255,0.35)"
+                style={styles.profileFieldInput}
+                autoCapitalize="none"
+              />
+              <TextInput
+                value={stayEnd}
+                onChangeText={setStayEnd}
+                placeholder="End"
+                placeholderTextColor="rgba(255,255,255,0.35)"
+                style={[styles.profileFieldInput, { marginTop: 8 }]}
+                autoCapitalize="none"
+              />
+              <Text style={styles.profileFieldLabel}>Room type preference</Text>
+              <TextInput
+                value={roomTypePref}
+                onChangeText={setRoomTypePref}
+                placeholder="Studio, 1BR, Shared…"
+                placeholderTextColor="rgba(255,255,255,0.35)"
+                style={styles.profileFieldInput}
+              />
+              <Text style={styles.profileFieldLabel}>Gender preference</Text>
+              <TextInput
+                value={genderPref}
+                onChangeText={setGenderPref}
+                placeholder="Any, same gender, …"
+                placeholderTextColor="rgba(255,255,255,0.35)"
+                style={styles.profileFieldInput}
+              />
+              <Text style={styles.profileFieldLabel}>Preferred neighborhoods (comma-separated)</Text>
+              <TextInput
+                value={neighborhoodsCsv}
+                onChangeText={setNeighborhoodsCsv}
+                placeholder="Campus, State St, …"
+                placeholderTextColor="rgba(255,255,255,0.35)"
+                style={styles.profileFieldInput}
+              />
+            </>
+          ) : (
+            <Text style={styles.profileHostNote}>
+              Hosts: create and manage your listing from the web dashboard or listings API when available.
+            </Text>
+          )}
+
+          <TouchableOpacity
+            style={[styles.profileSaveBtn, saving && styles.profileSaveBtnDisabled]}
+            onPress={() => void saveProfile()}
+            disabled={saving}
+            activeOpacity={0.85}
+          >
+            {saving ? (
+              <ActivityIndicator color="#FFF" />
+            ) : (
+              <Text style={styles.profileSaveBtnText}>Save changes</Text>
+            )}
+          </TouchableOpacity>
+        </>
+      )}
+    </ScrollView>
   );
 }
 
@@ -1251,6 +1907,251 @@ function ChatTabContent({
   );
 }
 
+function chatBubbleTextFromApi(body: string): string {
+  const t = (body || '').replace(/\u200b/g, '').trim();
+  return t.length > 0 ? t : 'Sent a like';
+}
+
+function ChatTabFromApi({
+  userId,
+  focusConversationId,
+  onConsumedFocusConversation,
+}: {
+  userId: string;
+  focusConversationId: string | null;
+  onConsumedFocusConversation: () => void;
+}) {
+  const [list, setList] = React.useState<ConversationSummaryDto[]>([]);
+  const [loading, setLoading] = React.useState(true);
+  const [threadOpen, setThreadOpen] = React.useState(false);
+  const [selectedId, setSelectedId] = React.useState('');
+  const [messages, setMessages] = React.useState<ChatMessageDto[]>([]);
+  const [msgLoading, setMsgLoading] = React.useState(false);
+  const [draft, setDraft] = React.useState('');
+  const [searchQuery, setSearchQuery] = React.useState('');
+
+  React.useEffect(() => {
+    let c = false;
+    void (async () => {
+      setLoading(true);
+      try {
+        const rows = await fetchConversations(userId);
+        if (!c) {
+          setList(rows);
+          setSelectedId(prev => {
+            if (prev && rows.some(r => r.conversation_id === prev)) return prev;
+            return rows[0]?.conversation_id ?? '';
+          });
+        }
+      } catch {
+        if (!c) setList([]);
+      } finally {
+        if (!c) setLoading(false);
+      }
+    })();
+    return () => {
+      c = true;
+    };
+  }, [userId]);
+
+  React.useEffect(() => {
+    if (!focusConversationId) return;
+    setSelectedId(focusConversationId);
+    setThreadOpen(true);
+    void (async () => {
+      try {
+        const rows = await fetchConversations(userId);
+        setList(rows);
+      } catch {
+        /* keep list */
+      }
+    })();
+    onConsumedFocusConversation();
+  }, [focusConversationId, onConsumedFocusConversation, userId]);
+
+  React.useEffect(() => {
+    if (!selectedId || !threadOpen) return;
+    let c = false;
+    setMsgLoading(true);
+    void fetchChatMessages(selectedId, userId)
+      .then(ms => {
+        if (!c) setMessages(ms);
+      })
+      .catch(() => {
+        if (!c) setMessages([]);
+      })
+      .finally(() => {
+        if (!c) setMsgLoading(false);
+      });
+    return () => {
+      c = true;
+    };
+  }, [selectedId, threadOpen, userId]);
+
+  const selected = list.find(x => x.conversation_id === selectedId) ?? list[0] ?? null;
+  const normalizedQuery = searchQuery.trim().toLowerCase();
+  const filteredList = list.filter(row => {
+    const hay = [row.other_display_name, row.listing_id ?? ''].join(' ').toLowerCase();
+    return hay.includes(normalizedQuery);
+  });
+
+  if (loading && list.length === 0) {
+    return (
+      <View style={[styles.chatScreen, { justifyContent: 'center' }]}>
+        <ActivityIndicator color={COLORS.primary} />
+      </View>
+    );
+  }
+
+  if (!selected && !threadOpen) {
+    return (
+      <TabPlaceholder
+        title="Chat"
+        subtitle="Conversations appear here after you accept a like."
+        icon="chatbubble-ellipses-outline"
+      />
+    );
+  }
+
+  if (!threadOpen) {
+    return (
+      <View style={styles.chatScreen}>
+        <View style={styles.chatInboxHeader}>
+          <View>
+            <Text style={styles.chatInboxTitle}>Chats</Text>
+            <Text style={styles.chatInboxSubtitle}>{list.length} conversations</Text>
+          </View>
+        </View>
+        <View style={styles.chatSearchBar}>
+          <Ionicons name="search" size={16} color="rgba(255,255,255,0.55)" />
+          <TextInput
+            value={searchQuery}
+            onChangeText={setSearchQuery}
+            placeholder="Search"
+            placeholderTextColor="rgba(255,255,255,0.4)"
+            style={styles.chatSearchInput}
+          />
+        </View>
+        <ScrollView style={styles.chatList} contentContainerStyle={styles.chatListContent}>
+          {filteredList.length === 0 ? (
+            <Text style={styles.likesEmptyApi}>No conversations.</Text>
+          ) : (
+            filteredList.map(row => (
+              <TouchableOpacity
+                key={row.conversation_id}
+                style={styles.chatListRow}
+                activeOpacity={0.85}
+                onPress={() => {
+                  setSelectedId(row.conversation_id);
+                  setThreadOpen(true);
+                }}
+              >
+                <View style={[styles.chatListAvatar, { backgroundColor: '#333' }]} />
+                <View style={styles.chatListTextWrap}>
+                  <Text style={styles.chatListName} numberOfLines={1}>
+                    {row.other_display_name}
+                  </Text>
+                  <Text style={styles.chatListPreview} numberOfLines={1}>
+                    {row.last_message_at ? 'Recent message' : 'Start chatting'}
+                  </Text>
+                </View>
+              </TouchableOpacity>
+            ))
+          )}
+        </ScrollView>
+      </View>
+    );
+  }
+
+  const threadTitle = selected?.other_display_name ?? 'Chat';
+
+  return (
+    <View style={styles.chatScreen}>
+      <View style={styles.chatConversationHeader}>
+        <TouchableOpacity
+          activeOpacity={0.8}
+          onPress={() => setThreadOpen(false)}
+          style={styles.chatConversationBack}
+        >
+          <Ionicons name="chevron-back" size={20} color="#FFF" />
+        </TouchableOpacity>
+        <View style={[styles.chatConversationAvatar, { backgroundColor: '#444' }]} />
+        <View style={styles.chatConversationHeaderText}>
+          <Text style={styles.chatConversationTitle}>{threadTitle}</Text>
+        </View>
+      </View>
+
+      {msgLoading ? (
+        <ActivityIndicator color={COLORS.primary} style={{ marginTop: 24 }} />
+      ) : (
+        <ScrollView
+          style={styles.chatConversationMessages}
+          contentContainerStyle={styles.chatConversationMessagesContent}
+          showsVerticalScrollIndicator={false}
+        >
+          {messages.map(m => {
+            const isSelf = m.sender_id === userId;
+            const text = chatBubbleTextFromApi(m.body);
+            return (
+              <View
+                key={m.id}
+                style={[
+                  styles.chatMessageRow,
+                  isSelf ? styles.chatMessageRowSelf : styles.chatMessageRowOther,
+                ]}
+              >
+                <View
+                  style={[
+                    styles.chatBubble,
+                    isSelf ? styles.chatBubbleSelf : styles.chatBubbleOther,
+                  ]}
+                >
+                  <Text style={[styles.chatBubbleText, isSelf && styles.chatBubbleTextSelf]}>{text}</Text>
+                </View>
+                <Text style={[styles.chatMessageTime, isSelf && styles.chatMessageTimeSelf]}>
+                  {new Date(m.created_at).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })}
+                </Text>
+              </View>
+            );
+          })}
+        </ScrollView>
+      )}
+
+      <View style={styles.chatComposer}>
+        <TextInput
+          value={draft}
+          onChangeText={setDraft}
+          placeholder="Message..."
+          placeholderTextColor="rgba(255,255,255,0.42)"
+          style={styles.chatComposerInput}
+        />
+        <TouchableOpacity
+          activeOpacity={0.85}
+          onPress={() => {
+            const t = draft.trim();
+            if (!t || !selectedId) return;
+            void postChatMessage(selectedId, userId, { body: t })
+              .then(m => {
+                setMessages(prev => [...prev, m]);
+                setDraft('');
+                void fetchConversations(userId).then(setList).catch(() => {});
+              })
+              .catch(e => Alert.alert('Chat', e instanceof Error ? e.message : 'Send failed'));
+          }}
+          disabled={!draft.trim()}
+          style={[styles.chatComposerSend, !draft.trim() && styles.chatComposerSendDisabled]}
+        >
+          <Text
+            style={[styles.chatComposerSendText, !draft.trim() && styles.chatComposerSendTextDisabled]}
+          >
+            Send
+          </Text>
+        </TouchableOpacity>
+      </View>
+    </View>
+  );
+}
+
 // ─── Main App ─────────────────────────────────────────────────────────────────
 export default function App() {
   // Auth state
@@ -1268,6 +2169,26 @@ export default function App() {
   const [chatThreads, setChatThreads] = useState<ChatThread[]>(() => createChatThreads('seeker'));
   const [selectedChatId, setSelectedChatId] = useState<string>(() => createChatThreads('seeker')[0]?.id ?? '');
   const [draftMessage, setDraftMessage] = useState('');
+  const [feedFilters, setFeedFilters] = useState<Record<string, string>>({});
+  const [superLikeOpen, setSuperLikeOpen] = useState(false);
+  const [superLikeDraft, setSuperLikeDraft] = useState('');
+  const [filterOpen, setFilterOpen] = useState(false);
+  const [filterDraft, setFilterDraft] = useState({
+    min_price: '',
+    max_price: '',
+    neighborhood: '',
+    amenities: '',
+    sort: 'newest',
+    max_distance_miles: '',
+  });
+  const superLikeListingIdRef = useRef<string | null>(null);
+  const [guestDeckNonce, setGuestDeckNonce] = useState(0);
+  const superLikeInAppAlertShownRef = useRef(false);
+  const [superLikeInboxCount, setSuperLikeInboxCount] = useState(0);
+  const [likeCommentOpen, setLikeCommentOpen] = useState(false);
+  const [likeCommentDraft, setLikeCommentDraft] = useState('');
+  const [apiChatFocusId, setApiChatFocusId] = useState<string | null>(null);
+  const clearApiChatFocus = useCallback(() => setApiChatFocusId(null), []);
 
   // Detail modal state
   const [detailProperty, setDetailProperty] = useState<Property | null>(null);
@@ -1292,17 +2213,92 @@ export default function App() {
     resetChatState(mode);
   }, [resetChatState]);
 
-  const applyAuthenticatedUser = useCallback(
-    (user: AuthUser, resetDecks = true) => {
+  const finalizeSeekerSwipe = useCallback(
+    (action: 'like' | 'pass', likeBody?: string | null) => {
+      setProperties(prev => {
+        const top = prev[0];
+        if (!top) return prev;
+        if (USE_API_FEED && currentUser?.id) {
+          const trimmed = likeBody?.trim();
+          const payload =
+            action === 'pass'
+              ? { user_id: currentUser.id, listing_id: top.id, action: 'pass' as const }
+              : {
+                  user_id: currentUser.id,
+                  listing_id: top.id,
+                  action: 'like' as const,
+                  ...(trimmed ? { body: trimmed } : {}),
+                };
+          void postSwipe(payload)
+            .then(() => pushFeedStack(currentUser.id!, top.id))
+            .catch(err => console.warn('Swipe API failed', err));
+        }
+        return prev.slice(1);
+      });
+    },
+    [currentUser?.id],
+  );
+
+  React.useEffect(() => {
+    if (!currentUser || currentUser.role !== 'seeker' || !USE_API_FEED) return;
+    if (authScreen !== 'dashboard') return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const r = await fetchFeed(currentUser.id, 0, feedFilters);
+        if (!cancelled) setProperties(r.items.map(mapFeedListingToProperty));
+      } catch (e) {
+        console.warn('Feed load failed', e);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [currentUser?.id, currentUser?.role, feedFilters, authScreen]);
+
+  React.useEffect(() => {
+    if (!USE_API_FEED || !currentUser || authScreen !== 'dashboard') return;
+    if (currentUser.role !== 'owner') {
+      setSuperLikeInboxCount(0);
+      return;
+    }
+    let cancelled = false;
+    void fetchSuperLikesReceived(currentUser.id)
+      .then(res => {
+        if (cancelled) return;
+        setSuperLikeInboxCount(res.items.length);
+        if (res.items.length > 0 && !superLikeInAppAlertShownRef.current) {
+          superLikeInAppAlertShownRef.current = true;
+          Alert.alert(
+            'Super Like',
+            `You have ${res.items.length} new Super Like(s). See the top of the Likes tab.`,
+          );
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setSuperLikeInboxCount(0);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [currentUser?.id, currentUser?.role, authScreen]);
+
+  const completeAuthenticatedEntry = useCallback(
+    async (user: AuthUser, resetDecks = true) => {
       const nextMode: AppMode = user.role === 'seeker' ? 'seeker' : 'host';
       selectedRoleRef.current = user.role;
       setCurrentUser(user);
-      setAuthScreen('dashboard');
-
-      if (resetDecks) {
-        resetDashboardState(nextMode);
+      const key = profileOnboardingKey(user.id, user.role === 'seeker' ? 'seeker' : 'owner');
+      const done = await AsyncStorage.getItem(key);
+      if (done === '1') {
+        setAuthScreen('dashboard');
+        if (resetDecks) {
+          resetDashboardState(nextMode);
+        } else {
+          resetChatState(nextMode);
+        }
       } else {
-        resetChatState(nextMode);
+        setAuthScreen('profile-onboarding');
       }
     },
     [resetChatState, resetDashboardState],
@@ -1346,7 +2342,7 @@ export default function App() {
         }
 
         if (data.session?.user) {
-          applyAuthenticatedUser(
+          await completeAuthenticatedEntry(
             mapSupabaseUser(data.session.user, selectedRoleRef.current),
             false,
           );
@@ -1379,7 +2375,7 @@ export default function App() {
       }
 
       if (session?.user) {
-        applyAuthenticatedUser(
+        void completeAuthenticatedEntry(
           mapSupabaseUser(session.user, selectedRoleRef.current),
           false,
         );
@@ -1392,11 +2388,12 @@ export default function App() {
       isMounted = false;
       subscription.unsubscribe();
     };
-  }, [applyAuthenticatedUser]);
+  }, [completeAuthenticatedEntry]);
 
   useEffect(() => {
     if (!currentUser) {
       bootstrappedProfileUserIdRef.current = null;
+      superLikeInAppAlertShownRef.current = false;
       return;
     }
 
@@ -1432,12 +2429,24 @@ export default function App() {
   // ─── Auth handlers ───────────────────────────────────────────────────────
   const handleSelectRole = (role: 'seeker' | 'owner') => {
     selectedRoleRef.current = role;
-    setAuthScreen(role === 'seeker' ? 'seeker-auth' : 'owner-auth');
+    const nextMode: AppMode = role === 'seeker' ? 'seeker' : 'host';
+    resetDashboardState(nextMode);
+    setGuestDeckNonce(n => n + 1);
+    setAuthScreen('guest-dashboard');
   };
 
   const handleAuthenticated = (user: AuthUser) => {
-    applyAuthenticatedUser(user);
+    void completeAuthenticatedEntry(user);
   };
+
+  const handleProfileOnboardingFinished = useCallback(() => {
+    setAuthScreen('dashboard');
+    if (!currentUser) {
+      return;
+    }
+    const nextMode: AppMode = currentUser.role === 'seeker' ? 'seeker' : 'host';
+    resetDashboardState(nextMode);
+  }, [currentUser, resetDashboardState]);
 
   const handleBackToRoleSelect = () => {
     setAuthScreen('role-select');
@@ -1456,6 +2465,64 @@ export default function App() {
       setIsLoggingOut(false);
     }
   };
+
+  // Dashboard-derived flags + callbacks MUST run every render (before any return) — Rules of Hooks.
+  const isGuest = authScreen === 'guest-dashboard';
+  const mode: AppMode = isGuest
+    ? selectedRoleRef.current === 'seeker'
+      ? 'seeker'
+      : 'host'
+    : currentUser
+      ? currentUser.role === 'seeker'
+        ? 'seeker'
+        : 'host'
+      : 'seeker';
+
+  const promptGuestAuth = useCallback(() => {
+    setGuestDeckNonce(n => n + 1);
+    Alert.alert(
+      'Sign up or log in',
+      'You need an account to keep swiping.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Log in / Sign up',
+          onPress: () =>
+            setAuthScreen(selectedRoleRef.current === 'seeker' ? 'seeker-auth' : 'owner-auth'),
+        },
+      ],
+    );
+  }, []);
+
+  const handleSwipedLeft = useCallback(() => {
+    if (isGuest) {
+      promptGuestAuth();
+      return;
+    }
+    if (mode === 'seeker') finalizeSeekerSwipe('pass');
+    else setSeekers(s => s.slice(1));
+  }, [isGuest, mode, finalizeSeekerSwipe, promptGuestAuth]);
+
+  const handleSwipedRight = useCallback(() => {
+    if (isGuest) {
+      promptGuestAuth();
+      return;
+    }
+    if (mode === 'seeker') finalizeSeekerSwipe('like');
+    else setSeekers(s => s.slice(1));
+  }, [isGuest, mode, finalizeSeekerSwipe, promptGuestAuth]);
+
+  const handleFeedBack = useCallback(async () => {
+    if (isGuest || !USE_API_FEED || !currentUser?.id || mode !== 'seeker') return;
+    try {
+      const { listing } = await popFeedStack(currentUser.id);
+      if (listing) {
+        setProperties(prev => [mapFeedListingToProperty(listing), ...prev]);
+      }
+    } catch {
+      Alert.alert('Back', 'Could not load the previous card.');
+    }
+  }, [isGuest, currentUser?.id, mode]);
 
   // ─── Auth screens ────────────────────────────────────────────────────────
   if (!isAuthReady) {
@@ -1484,25 +2551,46 @@ export default function App() {
     );
   }
 
-  // ─── Dashboard ───────────────────────────────────────────────────────────
-  if (!currentUser) {
+  if (authScreen === 'profile-onboarding' && currentUser) {
+    return (
+      <ProfileOnboardingFlow user={currentUser} onFinished={handleProfileOnboardingFinished} />
+    );
+  }
+
+  // ─── Dashboard (logged-in or guest preview) ──────────────────────────────
+  if (!currentUser && authScreen !== 'guest-dashboard') {
     return <LoadingScreen label="Loading your account..." />;
   }
 
-  const mode: AppMode = currentUser.role === 'seeker' ? 'seeker' : 'host';
   const currentDeck = mode === 'seeker' ? properties : seekers;
   const likeSections = createLikesSections(mode);
 
-  const removeTop = () => {
-    if (mode === 'seeker') setProperties(p => p.slice(1));
-    else setSeekers(s => s.slice(1));
+  const trySetActiveTab = (t: DashboardTab) => {
+    if (isGuest && t !== 'explore') {
+      Alert.alert(
+        'Log in required',
+        'Sign up or log in to use this feature.',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          {
+            text: 'Log in / Sign up',
+            onPress: () =>
+              setAuthScreen(selectedRoleRef.current === 'seeker' ? 'seeker-auth' : 'owner-auth'),
+          },
+        ],
+      );
+      return;
+    }
+    setActiveTab(t);
   };
 
   const handleButtonSwipe = (direction: 'left' | 'right') => {
     if (topCardRef.current) {
       topCardRef.current.triggerSwipe(direction);
+    } else if (direction === 'left') {
+      handleSwipedLeft();
     } else {
-      removeTop();
+      handleSwipedRight();
     }
   };
 
@@ -1550,10 +2638,31 @@ export default function App() {
 
   const renderTabContent = () => {
     if (activeTab === 'likes') {
+      if (!isGuest && currentUser && USE_API_FEED) {
+        return (
+          <LikesFromApi
+            userId={currentUser.id}
+            role={mode === 'seeker' ? 'seeker' : 'host'}
+            onOpenChat={cid => {
+              setApiChatFocusId(cid);
+              setActiveTab('chat');
+            }}
+          />
+        );
+      }
       return <LikesTabContent sections={likeSections} />;
     }
 
     if (activeTab === 'chat') {
+      if (!isGuest && currentUser && USE_API_FEED) {
+        return (
+          <ChatTabFromApi
+            userId={currentUser.id}
+            focusConversationId={apiChatFocusId}
+            onConsumedFocusConversation={clearApiChatFocus}
+          />
+        );
+      }
       return (
         <ChatTabContent
           threads={chatThreads}
@@ -1567,6 +2676,17 @@ export default function App() {
     }
 
     if (activeTab === 'profile') {
+      if (!isGuest && currentUser && USE_API_FEED) {
+        return (
+          <ProfileTabWithApi
+            userId={currentUser.id}
+            authRole={currentUser.role}
+            syncProfileFromAuth={async () => {
+              await ensureProfileRecord(currentUser);
+            }}
+          />
+        );
+      }
       return (
         <TabPlaceholder
           title="Profile"
@@ -1578,7 +2698,16 @@ export default function App() {
 
     return (
       <>
-        <View style={styles.deckContainer} pointerEvents="box-none">
+        {!isGuest && USE_API_FEED && mode === 'seeker' && (
+          <TouchableOpacity
+            style={styles.filterFab}
+            onPress={() => setFilterOpen(true)}
+            activeOpacity={0.85}
+          >
+            <Ionicons name="options-outline" size={22} color="#FFF" />
+          </TouchableOpacity>
+        )}
+        <View style={styles.deckContainer} pointerEvents="box-none" key={`guest-deck-${guestDeckNonce}`}>
           {currentDeck.length === 0 ? (
             <EmptyState mode={mode} />
           ) : (
@@ -1593,15 +2722,35 @@ export default function App() {
                   key={key}
                   ref={isTopCard ? topCardRef : undefined}
                   index={index}
-                  onSwipedLeft={removeTop}
-                  onSwipedRight={removeTop}
+                  onSwipedLeft={handleSwipedLeft}
+                  onSwipedRight={handleSwipedRight}
                 >
                   {mode === 'seeker'
                     ? <PropertyCardContent
                       property={item as Property}
                       onShowDetail={() => showPropertyDetail(item as Property)}
                       onNope={isTopCard ? () => handleButtonSwipe('left') : undefined}
-                      onLike={isTopCard ? () => handleButtonSwipe('right') : undefined}
+                      onLike={
+                        isTopCard && USE_API_FEED && mode === 'seeker' && !isGuest
+                          ? () => {
+                              setLikeCommentDraft('');
+                              setLikeCommentOpen(true);
+                            }
+                          : isTopCard
+                            ? () => handleButtonSwipe('right')
+                            : undefined
+                      }
+                      onSuperLike={
+                        isTopCard && isGuest
+                          ? () => promptGuestAuth()
+                          : isTopCard && USE_API_FEED
+                            ? () => {
+                              superLikeListingIdRef.current = (item as Property).id;
+                              setSuperLikeDraft('');
+                              setSuperLikeOpen(true);
+                            }
+                            : undefined
+                      }
                     />
                     : <SeekerCardContent
                       card={item as SeekerCard}
@@ -1629,7 +2778,17 @@ export default function App() {
     <View style={{ flex: 1, backgroundColor: '#000' }}>
       <StatusBar barStyle="light-content" backgroundColor="#000" />
       <View style={styles.container}>
-        <DashboardHeader onLogout={handleLogout} isLoggingOut={isLoggingOut} />
+        <DashboardHeader
+          onLogout={handleLogout}
+          isLoggingOut={isLoggingOut}
+          showBack={!isGuest && activeTab === 'explore' && mode === 'seeker' && USE_API_FEED}
+          onBack={handleFeedBack}
+          isGuest={isGuest}
+          onGuestLogin={() =>
+            setAuthScreen(selectedRoleRef.current === 'seeker' ? 'seeker-auth' : 'owner-auth')
+          }
+          onGuestBack={() => setAuthScreen('role-select')}
+        />
 
         {renderTabContent()}
 
@@ -1641,13 +2800,18 @@ export default function App() {
                 key={tab.key}
                 style={styles.tabBarItem}
                 activeOpacity={0.8}
-                onPress={() => setActiveTab(tab.key)}
+                onPress={() => trySetActiveTab(tab.key)}
               >
-                <Ionicons
-                  name={isActive ? tab.activeIcon : tab.icon}
-                  size={22}
-                  color={isActive ? COLORS.primary : '#A0A0A0'}
-                />
+                <View style={styles.tabBarIconWrap}>
+                  <Ionicons
+                    name={isActive ? tab.activeIcon : tab.icon}
+                    size={22}
+                    color={isActive ? COLORS.primary : '#A0A0A0'}
+                  />
+                  {tab.key === 'likes' && superLikeInboxCount > 0 && !isGuest ? (
+                    <View style={styles.tabBadgeDot} />
+                  ) : null}
+                </View>
                 <Text style={[styles.tabBarLabel, isActive && styles.tabBarLabelActive]}>
                   {tab.label}
                 </Text>
@@ -1656,6 +2820,162 @@ export default function App() {
           })}
         </View>
       </View>
+
+      <Modal visible={superLikeOpen} transparent animationType="fade" onRequestClose={() => setSuperLikeOpen(false)}>
+        <View style={styles.superLikeOverlay}>
+          <View style={styles.superLikeSheet}>
+            <Text style={styles.superLikeTitle}>Super like (once per day)</Text>
+            <Text style={styles.superLikeHint}>Add an offer or a short question.</Text>
+            <TextInput
+              value={superLikeDraft}
+              onChangeText={setSuperLikeDraft}
+              placeholder="Message (1–500 characters)"
+              placeholderTextColor="#888"
+              multiline
+              style={styles.superLikeInput}
+            />
+            <View style={styles.superLikeActions}>
+              <TouchableOpacity style={styles.superLikeCancel} onPress={() => setSuperLikeOpen(false)}>
+                <Text style={styles.superLikeCancelText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.superLikeSend}
+                onPress={async () => {
+                  const text = superLikeDraft.trim();
+                  const lid = superLikeListingIdRef.current;
+                  if (!text || !lid || !currentUser?.id) {
+                    Alert.alert('Super like', 'Please enter a message.');
+                    return;
+                  }
+                  try {
+                    const r = await postSuperLike({
+                      user_id: currentUser.id,
+                      listing_id: lid,
+                      body: text,
+                    });
+                    if (!r.ok) {
+                      Alert.alert('Super like', r.message || 'Already used today.');
+                    } else {
+                      Alert.alert('Super like', 'Sent.');
+                    }
+                  } catch (e) {
+                    Alert.alert('Super like', e instanceof Error ? e.message : 'Failed');
+                  } finally {
+                    setSuperLikeOpen(false);
+                  }
+                }}
+              >
+                <Text style={styles.superLikeSendText}>Send</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal visible={likeCommentOpen} transparent animationType="fade" onRequestClose={() => setLikeCommentOpen(false)}>
+        <View style={styles.superLikeOverlay}>
+          <View style={styles.superLikeSheet}>
+            <Text style={styles.superLikeTitle}>Send like</Text>
+            <Text style={styles.superLikeHint}>Optional note up to 50 characters, or leave blank.</Text>
+            <TextInput
+              value={likeCommentDraft}
+              onChangeText={t => setLikeCommentDraft(t.length > 50 ? t.slice(0, 50) : t)}
+              placeholder="Message (optional)"
+              placeholderTextColor="#888"
+              multiline
+              style={styles.superLikeInput}
+            />
+            <View style={styles.superLikeActions}>
+              <TouchableOpacity style={styles.superLikeCancel} onPress={() => setLikeCommentOpen(false)}>
+                <Text style={styles.superLikeCancelText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.superLikeSend}
+                onPress={() => {
+                  const top = properties[0];
+                  if (!top || !currentUser?.id) {
+                    setLikeCommentOpen(false);
+                    return;
+                  }
+                  const msg = likeCommentDraft.trim();
+                  finalizeSeekerSwipe('like', msg || null);
+                  setLikeCommentOpen(false);
+                }}
+              >
+                <Text style={styles.superLikeSendText}>Send</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal visible={filterOpen} transparent animationType="slide" onRequestClose={() => setFilterOpen(false)}>
+        <View style={styles.superLikeOverlay}>
+          <View style={styles.filterSheet}>
+            <Text style={styles.superLikeTitle}>Filters</Text>
+            <Text style={styles.filterLabel}>Min price</Text>
+            <TextInput
+              style={styles.filterField}
+              keyboardType="number-pad"
+              value={filterDraft.min_price}
+              onChangeText={t => setFilterDraft(d => ({ ...d, min_price: t }))}
+            />
+            <Text style={styles.filterLabel}>Max price</Text>
+            <TextInput
+              style={styles.filterField}
+              keyboardType="number-pad"
+              value={filterDraft.max_price}
+              onChangeText={t => setFilterDraft(d => ({ ...d, max_price: t }))}
+            />
+            <Text style={styles.filterLabel}>Neighborhood keyword</Text>
+            <TextInput
+              style={styles.filterField}
+              value={filterDraft.neighborhood}
+              onChangeText={t => setFilterDraft(d => ({ ...d, neighborhood: t }))}
+            />
+            <Text style={styles.filterLabel}>Amenities (comma-separated, e.g. gym,parking)</Text>
+            <TextInput
+              style={styles.filterField}
+              value={filterDraft.amenities}
+              onChangeText={t => setFilterDraft(d => ({ ...d, amenities: t }))}
+            />
+            <Text style={styles.filterLabel}>Max distance from campus (miles)</Text>
+            <TextInput
+              style={styles.filterField}
+              keyboardType="decimal-pad"
+              value={filterDraft.max_distance_miles}
+              onChangeText={t => setFilterDraft(d => ({ ...d, max_distance_miles: t }))}
+            />
+            <Text style={styles.filterLabel}>Sort (newest | price_asc | price_desc | distance_asc)</Text>
+            <TextInput
+              style={styles.filterField}
+              value={filterDraft.sort}
+              onChangeText={t => setFilterDraft(d => ({ ...d, sort: t }))}
+            />
+            <TouchableOpacity
+              style={styles.superLikeSend}
+              onPress={() => {
+                const next: Record<string, string> = {};
+                if (filterDraft.min_price.trim()) next.min_price = filterDraft.min_price.trim();
+                if (filterDraft.max_price.trim()) next.max_price = filterDraft.max_price.trim();
+                if (filterDraft.neighborhood.trim()) next.neighborhood = filterDraft.neighborhood.trim();
+                if (filterDraft.amenities.trim()) next.amenities = filterDraft.amenities.trim();
+                if (filterDraft.max_distance_miles.trim()) {
+                  next.max_distance_miles = filterDraft.max_distance_miles.trim();
+                }
+                if (filterDraft.sort.trim()) next.sort = filterDraft.sort.trim();
+                setFeedFilters(next);
+                setFilterOpen(false);
+              }}
+            >
+              <Text style={styles.superLikeSendText}>Apply & reload feed</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.filterReset} onPress={() => setFeedFilters({})}>
+              <Text style={styles.filterResetText}>Reset filters</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
 
       {/* Property Detail Modal */}
       <PropertyDetailModal
@@ -1702,10 +3022,18 @@ const styles = StyleSheet.create({
     zIndex: 50,
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'flex-end',
+    justifyContent: 'space-between',
     paddingHorizontal: 16,
     paddingTop: Platform.OS === 'android' ? (StatusBar.currentHeight ?? 32) + 8 : 54,
     paddingBottom: 10,
+  },
+  headerIconBtn: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: 'rgba(0,0,0,0.35)',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   logoutBtn: {
     width: 38,
@@ -1797,7 +3125,12 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     paddingHorizontal: 20,
-    gap: 4,
+    gap: 6,
+  },
+  cardInfoDivider: {
+    height: 1,
+    backgroundColor: 'rgba(255,255,255,0.35)',
+    marginVertical: 4,
   },
   cardInfoRow: {
     flexDirection: 'row',
@@ -1932,7 +3265,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 50,
+    gap: 22,
   },
   actionBtn: {
     width: 76,
@@ -1948,6 +3281,16 @@ const styles = StyleSheet.create({
   },
   actionLike: {
     borderColor: 'rgba(0,200,83,0.5)',
+  },
+  actionSuper: {
+    borderColor: 'rgba(255,213,79,0.55)',
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+  },
+  actionSuperSpacer: {
+    width: 64,
+    height: 64,
   },
 
   // Footer
@@ -2215,6 +3558,46 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#FFD7D8',
     textAlign: 'center',
+  },
+  likeItemActions: {
+    flexDirection: 'row',
+    gap: 10,
+    marginTop: 10,
+  },
+  likeActionPill: {
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.2)',
+  },
+  likeActionDecline: {
+    backgroundColor: 'rgba(255,255,255,0.06)',
+  },
+  likeActionAccept: {
+    backgroundColor: COLORS.primary,
+    borderColor: COLORS.primary,
+  },
+  likeActionPillText: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#EEE',
+  },
+  likeActionAcceptText: {
+    color: '#FFF',
+  },
+  likeOpenChatBtn: {
+    marginTop: 8,
+    alignSelf: 'flex-start',
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    borderRadius: 12,
+    backgroundColor: 'rgba(255,90,95,0.25)',
+  },
+  likeOpenChatBtnText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#FFB4B6',
   },
 
   chatScreen: {
@@ -2681,5 +4064,289 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '600',
     color: '#6C5CE7',
+  },
+
+  filterFab: {
+    position: 'absolute',
+    right: 18,
+    top: Platform.OS === 'android' ? (StatusBar.currentHeight ?? 32) + 52 : 98,
+    zIndex: 55,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: 'rgba(0,0,0,0.45)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  likesSegmentRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginBottom: 16,
+  },
+  likesSegmentBtn: {
+    flex: 1,
+    paddingVertical: 12,
+    borderRadius: 12,
+    backgroundColor: '#1E1E1E',
+    alignItems: 'center',
+  },
+  likesSegmentBtnActive: {
+    backgroundColor: 'rgba(255,90,95,0.25)',
+    borderWidth: 1,
+    borderColor: COLORS.primary,
+  },
+  likesSegmentLabel: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#AAA',
+    textAlign: 'center',
+  },
+  likesSegmentLabelActive: {
+    color: '#FFF',
+  },
+  likesEmptyApi: {
+    marginTop: 20,
+    fontSize: 14,
+    color: '#888',
+    textAlign: 'center',
+  },
+  profileCompletenessCard: {
+    backgroundColor: '#1A1A1A',
+    borderRadius: 16,
+    padding: 20,
+    marginTop: 8,
+  },
+  profileCompletenessTitle: {
+    fontSize: 14,
+    color: '#AAA',
+    fontWeight: '600',
+  },
+  profileCompletenessPct: {
+    fontSize: 42,
+    fontWeight: '800',
+    color: COLORS.primary,
+    marginTop: 8,
+  },
+  profileCompletenessMissing: {
+    marginTop: 12,
+    fontSize: 14,
+    color: '#CCC',
+    lineHeight: 20,
+  },
+  profileFormSectionTitle: {
+    fontSize: 17,
+    fontWeight: '800',
+    color: '#FFF',
+    marginTop: 22,
+    marginBottom: 10,
+  },
+  profileFieldLabel: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: 'rgba(255,255,255,0.55)',
+    marginBottom: 6,
+  },
+  profileFieldInput: {
+    backgroundColor: '#151515',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.12)',
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    fontSize: 15,
+    color: '#FFF',
+  },
+  profileFieldInputMultiline: {
+    minHeight: 88,
+    textAlignVertical: 'top',
+  },
+  profileReadonlyField: {
+    fontSize: 15,
+    color: 'rgba(255,255,255,0.85)',
+    paddingVertical: 10,
+  },
+  profileVerifiedNote: {
+    fontSize: 13,
+    color: COLORS.success,
+    marginTop: 6,
+    marginBottom: 4,
+  },
+  profileHostNote: {
+    fontSize: 14,
+    lineHeight: 20,
+    color: 'rgba(255,255,255,0.5)',
+    marginTop: 12,
+  },
+  profileErrorText: {
+    fontSize: 14,
+    lineHeight: 22,
+    color: 'rgba(255,200,200,0.95)',
+  },
+  profileSaveBtn: {
+    marginTop: 28,
+    marginBottom: 40,
+    backgroundColor: COLORS.primary,
+    paddingVertical: 16,
+    borderRadius: 14,
+    alignItems: 'center',
+  },
+  profileSaveBtnDisabled: {
+    opacity: 0.55,
+  },
+  profileSaveBtnText: {
+    fontSize: 16,
+    fontWeight: '800',
+    color: '#FFF',
+  },
+  superLikeOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.55)',
+    justifyContent: 'center',
+    paddingHorizontal: 24,
+  },
+  superLikeSheet: {
+    backgroundColor: '#1A1A1A',
+    borderRadius: 16,
+    padding: 20,
+  },
+  superLikeTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#FFF',
+  },
+  superLikeHint: {
+    fontSize: 13,
+    color: '#999',
+    marginTop: 6,
+  },
+  superLikeInput: {
+    marginTop: 14,
+    minHeight: 100,
+    borderRadius: 12,
+    padding: 12,
+    backgroundColor: '#111',
+    color: '#FFF',
+    textAlignVertical: 'top',
+  },
+  superLikeActions: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    gap: 12,
+    marginTop: 16,
+  },
+  superLikeCancel: {
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+  },
+  superLikeCancelText: {
+    color: '#AAA',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  superLikeSend: {
+    backgroundColor: COLORS.primary,
+    paddingVertical: 10,
+    paddingHorizontal: 18,
+    borderRadius: 12,
+  },
+  superLikeSendText: {
+    color: '#FFF',
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  filterSheet: {
+    backgroundColor: '#1A1A1A',
+    borderRadius: 16,
+    padding: 20,
+    maxHeight: SCREEN_HEIGHT * 0.85,
+  },
+  filterLabel: {
+    color: '#AAA',
+    fontSize: 12,
+    marginTop: 10,
+    fontWeight: '600',
+  },
+  filterField: {
+    marginTop: 6,
+    backgroundColor: '#111',
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    color: '#FFF',
+    fontSize: 15,
+  },
+  filterReset: {
+    marginTop: 12,
+    alignItems: 'center',
+  },
+  filterResetText: {
+    color: '#888',
+    fontSize: 14,
+  },
+
+  headerLoginBtn: {
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 16,
+    backgroundColor: COLORS.primary,
+  },
+  headerLoginBtnText: {
+    color: '#FFF',
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  tabBarIconWrap: {
+    position: 'relative',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  tabBadgeDot: {
+    position: 'absolute',
+    top: -2,
+    right: -6,
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: '#FFD54F',
+    borderWidth: 1,
+    borderColor: '#1A1A1A',
+  },
+  superLikeHighlightBlock: {
+    marginBottom: 16,
+    gap: 10,
+  },
+  superLikeHighlightTitle: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: '#FFD54F',
+    letterSpacing: 0.5,
+  },
+  superLikeHighlightCard: {
+    borderRadius: 14,
+    padding: 14,
+    borderWidth: 2,
+    borderColor: 'rgba(255,213,79,0.85)',
+    backgroundColor: 'rgba(255,213,79,0.08)',
+  },
+  superLikeHighlightListing: {
+    fontSize: 17,
+    fontWeight: '700',
+    color: '#FFF',
+  },
+  superLikeHighlightFrom: {
+    fontSize: 13,
+    color: 'rgba(255,255,255,0.75)',
+    marginTop: 4,
+  },
+  superLikeHighlightBody: {
+    fontSize: 14,
+    color: '#EEE',
+    marginTop: 8,
+    lineHeight: 20,
+  },
+  superLikeHighlightMeta: {
+    fontSize: 12,
+    color: 'rgba(255,255,255,0.55)',
+    marginTop: 8,
   },
 });

@@ -1,0 +1,9 @@
+# Helps Vercel resolve the ASGI app when multiple .py files exist.
+# https://vercel.com/docs/frameworks/backend/fastapi
+[project]
+name = "subadger-api"
+version = "0.1.0"
+requires-python = ">=3.12"
+
+[project.scripts]
+app = "main:app"
