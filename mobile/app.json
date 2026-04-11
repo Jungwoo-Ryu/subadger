@@ -1,25 +1,17 @@
 {
   "expo": {
-    "name": "Swip Lease",
-    "slug": "subadger-mobile",
+    "name": "SubLease Match",
+    "slug": "sublease-matching-app",
     "version": "1.0.0",
     "orientation": "portrait",
     "userInterfaceStyle": "light",
-    "splash": {
-      "resizeMode": "contain",
-      "backgroundColor": "#B91C1C"
-    },
-    "assetBundlePatterns": ["**/*"],
     "ios": {
-      "supportsTablet": false,
-      "bundleIdentifier": "com.likelion.subadger"
+      "supportsTablet": true,
+      "bundleIdentifier": "com.sublease.matchingapp"
     },
     "android": {
-      "adaptiveIcon": {
-        "backgroundColor": "#B91C1C"
-      },
-      "package": "com.likelion.subadger"
+      "package": "com.sublease.matchingapp"
     },
-    "scheme": "subadger"
+    "plugins": []
   }
 }
