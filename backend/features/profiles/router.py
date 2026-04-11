@@ -28,6 +28,30 @@ def _ensure_seeker_row(cur, user_id: str) -> None:
     )
 
 
+def _seeker_prefs_from_row(sp: dict) -> SeekerPrefsMe | None:
+    """Avoid 500 if seeker_profiles row is partial or corrupted."""
+    try:
+        bmin, bmax = sp.get("budget_min"), sp.get("budget_max")
+        sd, ed = sp.get("stay_start_date"), sp.get("stay_end_date")
+        if bmin is None or bmax is None or sd is None or ed is None:
+            return None
+        pr = sp.get("prefs")
+        if not isinstance(pr, dict):
+            pr = {}
+        return SeekerPrefsMe(
+            budget_min=int(bmin),
+            budget_max=int(bmax),
+            stay_start_date=sd,
+            stay_end_date=ed,
+            room_type_pref=sp.get("room_type_pref"),
+            furnished_pref=sp.get("furnished_pref"),
+            gender_pref=sp.get("gender_pref"),
+            prefs=pr,
+        )
+    except (TypeError, ValueError):
+        return None
+
+
 def _completeness_for_row(p: dict, sp: dict | None) -> tuple[int, list[str]]:
     missing: list[str] = []
     score = 0
@@ -150,20 +174,7 @@ def get_profile_me(user_id: UUID = Query(...)):
                 )
                 sp = cur.fetchone()
                 if sp:
-                    sp = dict(sp)
-                    pr = sp.get("prefs")
-                    if not isinstance(pr, dict):
-                        pr = {}
-                    seeker_block = SeekerPrefsMe(
-                        budget_min=int(sp["budget_min"]),
-                        budget_max=int(sp["budget_max"]),
-                        stay_start_date=sp["stay_start_date"],
-                        stay_end_date=sp["stay_end_date"],
-                        room_type_pref=sp.get("room_type_pref"),
-                        furnished_pref=sp.get("furnished_pref"),
-                        gender_pref=sp.get("gender_pref"),
-                        prefs=pr,
-                    )
+                    seeker_block = _seeker_prefs_from_row(dict(sp))
             conn.commit()
 
     return ProfileMeResponse(

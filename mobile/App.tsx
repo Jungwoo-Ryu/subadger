@@ -34,6 +34,7 @@ import SeekerAuthScreen from './src/screens/SeekerAuthScreen';
 import OwnerAuthScreen from './src/screens/OwnerAuthScreen';
 import ProfileOnboardingFlow from './src/screens/ProfileOnboardingFlow';
 import { profileOnboardingKey } from './src/storageKeys';
+import { BuckyLoading } from './src/components/BuckyLoading';
 import { type AuthRole, type AuthUser, mapSupabaseUser, signOut as signOutUser } from './src/lib/auth';
 import { ensureProfileRecord } from './src/lib/profile';
 import { supabase } from './src/lib/supabase';
@@ -985,7 +986,7 @@ function DashboardHeader({
 function LoadingScreen({ label }: { label: string }) {
   return (
     <View style={styles.loadingScreen}>
-      <ActivityIndicator size="large" color={COLORS.primary} />
+      <BuckyLoading size={112} swing={32} />
       <Text style={styles.loadingText}>{label}</Text>
     </View>
   );
@@ -1155,7 +1156,7 @@ function LikesFromApi({
         </TouchableOpacity>
       </View>
       {loading ? (
-        <ActivityIndicator color={COLORS.primary} style={{ marginTop: 24 }} />
+        <BuckyLoading size={88} swing={24} />
       ) : items.length === 0 ? (
         <Text style={styles.likesEmptyApi}>No items yet.</Text>
       ) : (
@@ -1347,6 +1348,10 @@ function ProfileTabWithApi({
         setLoadError(
           'No profile row in the database for this account yet. Tap “Sync profile” to create it from your login, or apply the Supabase migration that auto-creates profiles on sign-up.',
         );
+      } else if (/^5\d\d\b/.test(raw.trim())) {
+        setLoadError(
+          `${raw}\n\nIf logs mention a missing DB column, run the SQL from supabase/migrations in the Supabase SQL Editor (or fix schema).`,
+        );
       } else {
         setLoadError(raw);
       }
@@ -1418,7 +1423,7 @@ function ProfileTabWithApi({
         subtitle="Edit your profile and preferences. Completeness helps others trust your account."
       />
       {loading ? (
-        <ActivityIndicator color={COLORS.primary} style={{ marginTop: 24 }} />
+        <BuckyLoading size={96} swing={28} />
       ) : pct == null ? (
         <View style={{ marginTop: 16, gap: 16 }}>
           <Text style={styles.profileErrorText}>{loadError ?? 'Could not load profile.'}</Text>
@@ -1998,7 +2003,7 @@ function ChatTabFromApi({
   if (loading && list.length === 0) {
     return (
       <View style={[styles.chatScreen, { justifyContent: 'center' }]}>
-        <ActivityIndicator color={COLORS.primary} />
+        <BuckyLoading size={96} swing={28} />
       </View>
     );
   }
@@ -2082,7 +2087,7 @@ function ChatTabFromApi({
       </View>
 
       {msgLoading ? (
-        <ActivityIndicator color={COLORS.primary} style={{ marginTop: 24 }} />
+        <BuckyLoading size={80} swing={22} />
       ) : (
         <ScrollView
           style={styles.chatConversationMessages}

@@ -91,14 +91,40 @@ const base = () => {
   return u;
 };
 
+function formatHttpError(status: number, body: string, apiBase: string): string {
+  const t = body.trim();
+  if (t.startsWith('{')) {
+    try {
+      const j = JSON.parse(t) as { detail?: unknown };
+      if (typeof j.detail === 'string') {
+        return `${status} ${j.detail}`;
+      }
+      if (Array.isArray(j.detail)) {
+        return `${status} ${JSON.stringify(j.detail)}`;
+      }
+    } catch {
+      /* fall through */
+    }
+  }
+  if (status === 404 || /NOT_FOUND/i.test(t)) {
+    return (
+      `${status} API not found at this URL. Open ${apiBase}/health in a browser — if that fails, ` +
+      `fix Vercel Root Directory / redeploy. For email links, allowlist ${apiBase}/email-confirmed in Supabase → Auth → Redirect URLs.`
+    );
+  }
+  const short = t.length > 280 ? `${t.slice(0, 280)}…` : t;
+  return `${status} ${short || 'Request failed'}`;
+}
+
 async function http<T>(path: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(`${base()}${path}`, {
+  const apiBase = base();
+  const res = await fetch(`${apiBase}${path}`, {
     ...init,
     headers: { 'Content-Type': 'application/json', ...init?.headers },
   });
   if (!res.ok) {
     const text = await res.text();
-    throw new Error(`${res.status} ${text}`);
+    throw new Error(formatHttpError(res.status, text, apiBase));
   }
   if (res.status === 204) return undefined as T;
   return res.json() as Promise<T>;

@@ -16,6 +16,11 @@ CREATE TABLE IF NOT EXISTS public.profiles (
   role TEXT NOT NULL CHECK (role IN ('seeker', 'host')),
   display_name TEXT NOT NULL,
   avatar_url TEXT,
+  school_email TEXT,
+  school_email_verified_at TIMESTAMPTZ,
+  grade_or_year TEXT,
+  affiliation TEXT,
+  roommate_prefs JSONB NOT NULL DEFAULT '{}'::jsonb,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
@@ -51,6 +56,11 @@ CREATE TABLE IF NOT EXISTS public.listings (
   start_date DATE NOT NULL,
   end_date DATE NOT NULL,
   address TEXT NOT NULL,
+  title TEXT NOT NULL DEFAULT '',
+  neighborhood TEXT,
+  amenities JSONB NOT NULL DEFAULT '{}'::jsonb,
+  utilities_included BOOLEAN NOT NULL DEFAULT false,
+  rule_flags JSONB NOT NULL DEFAULT '{}'::jsonb,
   lat DOUBLE PRECISION,
   lng DOUBLE PRECISION,
   room_type TEXT NOT NULL,

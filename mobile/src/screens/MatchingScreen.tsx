@@ -5,7 +5,6 @@ import {
   StyleSheet,
   Image,
   Pressable,
-  ActivityIndicator,
   Modal,
   TextInput,
   Dimensions,
@@ -22,6 +21,7 @@ import Animated, {
   runOnJS,
 } from "react-native-reanimated";
 
+import { BuckyLoading } from "../components/BuckyLoading";
 import { colors, radii, space, type as t } from "../theme";
 import { fetchFeed, getFallbackUserId, postSwipe, type FeedListing } from "../api";
 import { useAuth } from "../context/AuthContext";
@@ -161,7 +161,7 @@ export function MatchingScreen() {
 
       {!authReady || loading ? (
         <View style={styles.center}>
-          <ActivityIndicator size="large" color={colors.primary} />
+          <BuckyLoading size={100} swing={28} />
           <Text style={[t.caption, { marginTop: 12 }]}>Loading listings…</Text>
         </View>
       ) : err ? (

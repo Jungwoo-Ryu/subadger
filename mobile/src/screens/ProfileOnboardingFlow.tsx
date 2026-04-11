@@ -4,7 +4,6 @@
  */
 import React, { useCallback, useRef, useState } from 'react';
 import {
-  ActivityIndicator,
   Alert,
   Dimensions,
   FlatList,
@@ -21,6 +20,7 @@ import {
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
+import { BuckyLoading } from '../components/BuckyLoading';
 import type { AuthUser } from '../lib/auth';
 import { ensureProfileRecord } from '../lib/profile';
 import {
@@ -294,7 +294,7 @@ export default function ProfileOnboardingFlow({ user, onFinished }: ProfileOnboa
           Host tools use the Explore tab. You can add listing details from your dashboard flows.
         </Text>
         {saving ? (
-          <ActivityIndicator color={colors.primary} style={{ marginTop: 24 }} />
+          <BuckyLoading size={88} swing={24} />
         ) : (
           <Pressable
             style={({ pressed }) => [styles.btn, { marginTop: 28 }, pressed && styles.btnPressed]}
@@ -478,7 +478,7 @@ export default function ProfileOnboardingFlow({ user, onFinished }: ProfileOnboa
           />
         </View>
         {saving ? (
-          <ActivityIndicator color={colors.primary} style={{ marginTop: 32 }} />
+          <BuckyLoading size={92} swing={26} />
         ) : (
           footer(false)
         )}

@@ -42,6 +42,7 @@ app = FastAPI(
     title="Subadger API",
     version="1.1.0",
     lifespan=lifespan,
+    redirect_slashes=False,
 )
 
 _origins = os.getenv("CORS_ORIGINS", "*")
@@ -98,16 +99,30 @@ _EMAIL_CONFIRMED_HTML = """<!DOCTYPE html>
 </html>"""
 
 
+def _email_confirmed_response() -> HTMLResponse:
+    return HTMLResponse(content=_EMAIL_CONFIRMED_HTML)
+
+
+# Several paths: Supabase redirect must match one of these exactly (allowlist).
 @app.get("/auth/email-confirmed", response_class=HTMLResponse)
+@app.get("/auth/email-confirmed/", response_class=HTMLResponse)
 def auth_email_confirmed():
     """
     Landing page after Supabase email confirmation (signUp emailRedirectTo).
     Add this full URL under Supabase → Authentication → URL Configuration → Redirect URLs.
     """
-    return HTMLResponse(content=_EMAIL_CONFIRMED_HTML)
+    return _email_confirmed_response()
+
+
+@app.get("/email-confirmed", response_class=HTMLResponse)
+@app.get("/email-confirmed/", response_class=HTMLResponse)
+def auth_email_confirmed_short():
+    """Shorter URL (same HTML) — useful if a proxy strips nested paths."""
+    return _email_confirmed_response()
 
 
 @app.get("/auth/confirm", response_class=HTMLResponse)
+@app.get("/auth/confirm/", response_class=HTMLResponse)
 def auth_confirm_alias():
     """Alias for shorter links or older configs."""
-    return HTMLResponse(content=_EMAIL_CONFIRMED_HTML)
+    return _email_confirmed_response()

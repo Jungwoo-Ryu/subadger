@@ -1,5 +1,6 @@
 -- Meeting backlog: listing title & filters, profile extensions, super likes, feed stack, chat images.
--- Apply with: supabase db push (existing projects). Fresh installs get this after 20260320 migration.
+-- Profiles/listings columns above also exist on fresh DBs (see 20260320 CREATE TABLE); ALTERs here stay
+-- idempotent (IF NOT EXISTS) for projects created before that merge.
 
 -- -----------------------------------------------------------------------------
 -- listings

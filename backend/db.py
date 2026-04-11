@@ -36,13 +36,37 @@ _ERR_VERCEL_NEED_POOLER = (
 
 
 def _running_on_vercel() -> bool:
-    if os.getenv("VERCEL") or os.getenv("VERCEL_ENV") or os.getenv("VERCEL_REGION"):
+    """
+    Vercel Python 함수는 보통 /var/task 에 풀리지만, VERCEL_* 환경 변수가 비어 있는 경우가 있다.
+    Lambda 호환 변수와 작업 디렉터리로 보강한다.
+    """
+    markers = (
+        "VERCEL",
+        "VERCEL_ENV",
+        "VERCEL_REGION",
+        "VERCEL_URL",
+        "VERCEL_DEPLOYMENT_ID",
+        "VERCEL_PROJECT_ID",
+    )
+    if any(os.getenv(k) for k in markers):
         return True
     try:
-        path = os.path.abspath(__file__).replace("\\", "/")
+        here = os.path.abspath(__file__).replace("\\", "/")
     except NameError:
-        return False
-    return "/var/task/" in path
+        here = ""
+    if "/var/task/" in here:
+        return True
+    try:
+        cwd = os.getcwd().replace("\\", "/")
+    except OSError:
+        cwd = ""
+    if cwd == "/var/task" or cwd.startswith("/var/task/"):
+        return True
+    if os.getenv("AWS_LAMBDA_FUNCTION_NAME") and (
+        "/var/task/" in here or cwd.startswith("/var/task")
+    ):
+        return True
+    return False
 
 
 def _host_port(url: str) -> tuple[str | None, int]:
