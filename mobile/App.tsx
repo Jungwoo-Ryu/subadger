@@ -18,6 +18,7 @@ import {
   Image,
   Dimensions,
   TouchableOpacity,
+  TouchableWithoutFeedback,
   Platform,
   StatusBar,
   PanResponder,
@@ -609,8 +610,6 @@ function PropertyCardContent({
     deckAnim && isDeckTop ? Animated.multiply(entrance, deckAnim.likeOpacity) : entrance;
   const superOp =
     deckAnim && isDeckTop ? Animated.multiply(entrance, deckAnim.superOpacity) : entrance;
-  /** Detail/chevron stays on `entrance` only so it does not vanish with like/nope stamp fades during pans. */
-  const detailOp = entrance;
 
   return (
     <View style={styles.cardInner}>
@@ -624,19 +623,6 @@ function PropertyCardContent({
         </Text>
         <Text style={styles.subletPrice}>${property.subletPrice}/mo</Text>
       </View>
-      {isDeckTop && onShowDetail ? (
-        <Animated.View style={{ opacity: detailOp }} pointerEvents="box-none">
-          <TouchableOpacity
-            style={styles.detailBtn}
-            onPress={onShowDetail}
-            activeOpacity={0.8}
-            accessibilityRole="button"
-            accessibilityLabel="More information"
-          >
-            <Ionicons name="chevron-up" size={18} color="#FFF" />
-          </TouchableOpacity>
-        </Animated.View>
-      ) : null}
       {isDeckTop && onNope && onLike ? (
         <View style={styles.actions} pointerEvents="box-none">
           {pan ? (
@@ -668,6 +654,19 @@ function PropertyCardContent({
           ) : null}
         </View>
       ) : null}
+      {isDeckTop && onShowDetail ? (
+        <View style={styles.detailBtnLayer} pointerEvents="box-none">
+          <TouchableWithoutFeedback onPress={onShowDetail}>
+            <View
+              style={styles.detailBtn}
+              accessibilityRole="button"
+              accessibilityLabel="More information"
+            >
+              <Ionicons name="information-circle" size={26} color="#FFF" />
+            </View>
+          </TouchableWithoutFeedback>
+        </View>
+      ) : null}
     </View>
   );
 }
@@ -695,7 +694,6 @@ function SeekerCardContent({
     deckAnim && isDeckTop ? Animated.multiply(entrance, deckAnim.nopeOpacity) : entrance;
   const likeOp =
     deckAnim && isDeckTop ? Animated.multiply(entrance, deckAnim.likeOpacity) : entrance;
-  const detailOp = entrance;
 
   return (
     <View style={styles.cardInner}>
@@ -707,19 +705,6 @@ function SeekerCardContent({
         {user.bio ? <Text style={styles.address} numberOfLines={1}>{user.bio}</Text> : null}
         <Text style={styles.subletPrice}>${profile.targetPriceMin} – ${profile.targetPriceMax}/mo</Text>
       </View>
-      {isDeckTop && onShowDetail ? (
-        <Animated.View style={{ opacity: detailOp }} pointerEvents="box-none">
-          <TouchableOpacity
-            style={styles.detailBtn}
-            onPress={onShowDetail}
-            activeOpacity={0.8}
-            accessibilityRole="button"
-            accessibilityLabel="More information"
-          >
-            <Ionicons name="chevron-up" size={18} color="#FFF" />
-          </TouchableOpacity>
-        </Animated.View>
-      ) : null}
       {isDeckTop && onNope && onLike ? (
         <View style={styles.actions} pointerEvents="box-none">
           {pan ? (
@@ -738,12 +723,31 @@ function SeekerCardContent({
           ) : null}
         </View>
       ) : null}
+      {isDeckTop && onShowDetail ? (
+        <View style={styles.detailBtnLayer} pointerEvents="box-none">
+          <TouchableWithoutFeedback onPress={onShowDetail}>
+            <View
+              style={styles.detailBtn}
+              accessibilityRole="button"
+              accessibilityLabel="More information"
+            >
+              <Ionicons name="information-circle" size={26} color="#FFF" />
+            </View>
+          </TouchableWithoutFeedback>
+        </View>
+      ) : null}
     </View>
   );
 }
 
 // ─── Swipe-Down Detail Modal ─────────────────────────────────────────────────
 const MODAL_DISMISS_THRESHOLD = 120;
+/** Pull past top of detail sheet (scroll “up” at top) dismisses, px into rubber-band. */
+const DETAIL_SCROLL_UP_DISMISS_OVERSCROLL = 22;
+/** Offset at or below this = user is at the top of the detail scroll content. */
+const DETAIL_SCROLL_TOP_EPSILON = 12;
+/** Past this offset = user has scrolled away from the top (must return before overscroll can dismiss). */
+const DETAIL_SCROLL_AWAY_FROM_TOP = 40;
 
 // ─── Property Detail Modal ───────────────────────────────────────────────────
 function PropertyDetailModal({ property, visible, onClose }: { property: Property | null; visible: boolean; onClose: () => void }) {
@@ -752,6 +756,8 @@ function PropertyDetailModal({ property, visible, onClose }: { property: Propert
   const dragY = useRef(new Animated.Value(0)).current;
   const [modalVisible, setModalVisible] = useState(false);
   const closingRef = useRef(false);
+  /** False after user scrolls down into content; true again only when y is back in the top band. */
+  const atDetailScrollTopRef = useRef(true);
 
   const combinedTranslateY = useRef(Animated.add(slideAnim, dragY)).current;
 
@@ -778,6 +784,21 @@ function PropertyDetailModal({ property, visible, onClose }: { property: Propert
       onClose();
     });
   }, [onClose]);
+
+  const onDetailScrollDismiss = useCallback(
+    (e: { nativeEvent: { contentOffset: { y: number } } }) => {
+      const y = e.nativeEvent.contentOffset.y;
+      if (y <= DETAIL_SCROLL_TOP_EPSILON) {
+        atDetailScrollTopRef.current = true;
+      } else if (y > DETAIL_SCROLL_AWAY_FROM_TOP) {
+        atDetailScrollTopRef.current = false;
+      }
+      if (atDetailScrollTopRef.current && y < -DETAIL_SCROLL_UP_DISMISS_OVERSCROLL) {
+        dismiss();
+      }
+    },
+    [dismiss],
+  );
 
   const panResponder = useRef(
     PanResponder.create({
@@ -817,6 +838,7 @@ function PropertyDetailModal({ property, visible, onClose }: { property: Propert
       dragY.setValue(0);
       slideAnim.setValue(SCREEN_HEIGHT);
       overlayOpacity.setValue(0);
+      atDetailScrollTopRef.current = true;
     }
   }, [visible]);
 
@@ -849,7 +871,15 @@ function PropertyDetailModal({ property, visible, onClose }: { property: Propert
             <View style={styles.modalHandleBar} />
           </View>
 
-          <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.modalContent}>
+          <ScrollView
+            showsVerticalScrollIndicator={false}
+            contentContainerStyle={styles.modalContent}
+            scrollEventThrottle={16}
+            bounces
+            alwaysBounceVertical
+            overScrollMode="always"
+            onScroll={onDetailScrollDismiss}
+          >
             {/* Header Map */}
             <View style={styles.modalMapContainer}>
               <MapView
@@ -934,6 +964,7 @@ function SeekerDetailModal({ card, visible, onClose }: { card: SeekerCard | null
   const dragY = useRef(new Animated.Value(0)).current;
   const [modalVisible, setModalVisible] = useState(false);
   const closingRef = useRef(false);
+  const atDetailScrollTopRef = useRef(true);
 
   const combinedTranslateY = useRef(Animated.add(slideAnim, dragY)).current;
 
@@ -960,6 +991,21 @@ function SeekerDetailModal({ card, visible, onClose }: { card: SeekerCard | null
       onClose();
     });
   }, [onClose]);
+
+  const onDetailScrollDismiss = useCallback(
+    (e: { nativeEvent: { contentOffset: { y: number } } }) => {
+      const y = e.nativeEvent.contentOffset.y;
+      if (y <= DETAIL_SCROLL_TOP_EPSILON) {
+        atDetailScrollTopRef.current = true;
+      } else if (y > DETAIL_SCROLL_AWAY_FROM_TOP) {
+        atDetailScrollTopRef.current = false;
+      }
+      if (atDetailScrollTopRef.current && y < -DETAIL_SCROLL_UP_DISMISS_OVERSCROLL) {
+        dismiss();
+      }
+    },
+    [dismiss],
+  );
 
   const panResponder = useRef(
     PanResponder.create({
@@ -999,6 +1045,7 @@ function SeekerDetailModal({ card, visible, onClose }: { card: SeekerCard | null
       dragY.setValue(0);
       slideAnim.setValue(SCREEN_HEIGHT);
       overlayOpacity.setValue(0);
+      atDetailScrollTopRef.current = true;
     }
   }, [visible]);
 
@@ -1033,7 +1080,15 @@ function SeekerDetailModal({ card, visible, onClose }: { card: SeekerCard | null
             <View style={styles.modalHandleBar} />
           </View>
 
-          <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.modalContent}>
+          <ScrollView
+            showsVerticalScrollIndicator={false}
+            contentContainerStyle={styles.modalContent}
+            scrollEventThrottle={16}
+            bounces
+            alwaysBounceVertical
+            overScrollMode="always"
+            onScroll={onDetailScrollDismiss}
+          >
             {/* Header image */}
             <Image source={{ uri: user.imageUrls[0] }} style={styles.modalImage} resizeMode="cover" />
 
@@ -3693,20 +3748,28 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
 
-  // Detail expand button
+  // More information — own layer above deck actions (zIndex 40) and gradients
+  detailBtnLayer: {
+    ...StyleSheet.absoluteFillObject,
+    pointerEvents: 'box-none',
+    zIndex: 100,
+    elevation: 24,
+  },
   detailBtn: {
     position: 'absolute',
     bottom: 115,
-    right: 20,
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    backgroundColor: 'rgba(255,255,255,0.2)',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.4)',
+    right: 16,
+    width: 52,
+    height: 52,
+    borderRadius: 26,
+    backgroundColor: 'rgba(0,0,0,0.55)',
+    borderWidth: 1.5,
+    borderColor: 'rgba(255,255,255,0.55)',
     alignItems: 'center',
     justifyContent: 'center',
-    zIndex: 25,
+    zIndex: 100,
+    elevation: 24,
+    opacity: 1,
   },
 
   // Stamps
