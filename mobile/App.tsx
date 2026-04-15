@@ -87,9 +87,9 @@ const USE_API_FEED = Boolean((process.env.EXPO_PUBLIC_API_URL || '').trim());
 
 /**
  * When true: guest preview skips auth prompts and tab/swipe locks (mock deck + Likes/Chat).
- * Use only on the `demo/full-access` branch for teammate demos — keep `false` on `main`.
+ * Branch `demo/full-access`: `true` (teammate demos). Branch `main`: `false`.
  */
-const DEMO_DISABLE_GUEST_BARRIER = false;
+const DEMO_DISABLE_GUEST_BARRIER = true;
 
 // ─── Auth types ──────────────────────────────────────────────────────────────
 type AuthScreen =
