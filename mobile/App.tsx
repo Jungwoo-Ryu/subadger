@@ -85,6 +85,12 @@ const SWIPE_THRESHOLD = SCREEN_WIDTH * 0.3;
 
 const USE_API_FEED = Boolean((process.env.EXPO_PUBLIC_API_URL || '').trim());
 
+/**
+ * When true: guest preview skips auth prompts and tab/swipe locks (mock deck + Likes/Chat).
+ * Use only on the `demo/full-access` branch for teammate demos — keep `false` on `main`.
+ */
+const DEMO_DISABLE_GUEST_BARRIER = false;
+
 // ─── Auth types ──────────────────────────────────────────────────────────────
 type AuthScreen =
   | 'role-select'
@@ -2833,7 +2839,7 @@ export default function App() {
   }, [currentUser]);
 
   useEffect(() => {
-    if (authScreen !== 'guest-dashboard') return;
+    if (authScreen !== 'guest-dashboard' || DEMO_DISABLE_GUEST_BARRIER) return;
     if (activeTab === 'likes' || activeTab === 'chat') {
       setActiveTab('explore');
     }
@@ -2899,6 +2905,8 @@ export default function App() {
 
   // Dashboard-derived flags + callbacks MUST run every render (before any return) — Rules of Hooks.
   const isGuest = authScreen === 'guest-dashboard';
+  /** Guest auth/tab/swipe restrictions (see `DEMO_DISABLE_GUEST_BARRIER`). */
+  const guestBarrierActive = isGuest && !DEMO_DISABLE_GUEST_BARRIER;
   const mode: AppMode = isGuest
     ? selectedRoleRef.current === 'seeker'
       ? 'seeker'
@@ -2925,22 +2933,22 @@ export default function App() {
   }, []);
 
   const handleSwipedLeft = useCallback(() => {
-    if (isGuest) {
+    if (guestBarrierActive) {
       promptGuestAuth();
       return;
     }
     if (mode === 'seeker') finalizeSeekerSwipe('pass');
     else setSeekers(s => s.slice(1));
-  }, [isGuest, mode, finalizeSeekerSwipe, promptGuestAuth]);
+  }, [guestBarrierActive, mode, finalizeSeekerSwipe, promptGuestAuth]);
 
   const handleSwipedRight = useCallback(() => {
-    if (isGuest) {
+    if (guestBarrierActive) {
       promptGuestAuth();
       return;
     }
     if (mode === 'seeker') finalizeSeekerSwipe('like');
     else setSeekers(s => s.slice(1));
-  }, [isGuest, mode, finalizeSeekerSwipe, promptGuestAuth]);
+  }, [guestBarrierActive, mode, finalizeSeekerSwipe, promptGuestAuth]);
 
   const handleFeedBack = useCallback(async () => {
     if (isGuest || !USE_API_FEED || !currentUser?.id || mode !== 'seeker') return;
@@ -2996,7 +3004,7 @@ export default function App() {
   const likeSections = createLikesSections(mode);
 
   const trySetActiveTab = (t: DashboardTab) => {
-    if (isGuest && (t === 'likes' || t === 'chat')) {
+    if (guestBarrierActive && (t === 'likes' || t === 'chat')) {
       promptGuestAuth();
       return;
     }
@@ -3004,7 +3012,7 @@ export default function App() {
   };
 
   const handleButtonSwipe = (direction: 'left' | 'right') => {
-    if (isGuest) {
+    if (guestBarrierActive) {
       promptGuestAuth();
       return;
     }
@@ -3155,8 +3163,8 @@ export default function App() {
                   key={key}
                   ref={isTopCard ? topCardRef : undefined}
                   index={index}
-                  allowSwipeCommit={isGuest ? () => false : undefined}
-                  onSwipeDenied={isGuest ? promptGuestAuth : undefined}
+                  allowSwipeCommit={guestBarrierActive ? () => false : undefined}
+                  onSwipeDenied={guestBarrierActive ? promptGuestAuth : undefined}
                   onSwipedLeft={handleSwipedLeft}
                   onSwipedRight={handleSwipedRight}
                 >
@@ -3180,7 +3188,7 @@ export default function App() {
                       }
                       onSuperLike={
                         isTopCard
-                          ? isGuest
+                          ? guestBarrierActive
                             ? () => promptGuestAuth()
                             : () => {
                                 superLikeListingIdRef.current = (item as Property).id;
@@ -3233,7 +3241,7 @@ export default function App() {
         <View style={styles.tabBar}>
           {tabs.map(tab => {
             const isActive = activeTab === tab.key;
-            const guestLockedTab = isGuest && (tab.key === 'likes' || tab.key === 'chat');
+            const guestLockedTab = guestBarrierActive && (tab.key === 'likes' || tab.key === 'chat');
             const showActiveIcon = isActive && !guestLockedTab;
             const iconColor = guestLockedTab
               ? '#555'
