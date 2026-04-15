@@ -83,7 +83,11 @@ class LoginResponse(BaseModel):
 class SuperLikeRequest(BaseModel):
     user_id: UUID
     listing_id: UUID
-    body: str = Field(..., min_length=1, max_length=500)
+    body: Optional[str] = Field(
+        None,
+        max_length=500,
+        description="Optional message; empty is stored as an invisible placeholder for DB constraints.",
+    )
 
 
 class SuperLikeResponse(BaseModel):

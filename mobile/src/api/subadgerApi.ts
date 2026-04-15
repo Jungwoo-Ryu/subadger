@@ -56,6 +56,7 @@ export function mapFeedListingToProperty(f: FeedListingDto): Property {
   const rules = rulesText
     ? rulesText.split(/\n|;/).map(r => r.trim()).filter(Boolean)
     : ['—'];
+  const utilsText = (f.utilities || '').trim();
   return {
     id: f.listing_id,
     hostId: f.host_id,
@@ -63,11 +64,13 @@ export function mapFeedListingToProperty(f: FeedListingDto): Property {
     address: f.address,
     originalRentPrice: f.price_monthly,
     subletPrice: f.price_monthly,
-    avgUtilityFee: f.utilities_included ? 0 : 50,
+    avgUtilityFee: 0,
     availableStartDate: f.start_date,
     availableEndDate: f.end_date,
     preferredGender: asGender(f.gender_pref),
-    description: f.neighborhood ? `${f.neighborhood}\n${f.utilities || ''}` : f.utilities || '',
+    description: f.neighborhood ? `${f.neighborhood}\n${utilsText}` : utilsText,
+    utilitiesDescription: utilsText || null,
+    utilitiesIncluded: Boolean(f.utilities_included),
     imageUrls: f.photos.length ? f.photos : ['https://images.unsplash.com/photo-1522708323590-d24dbb6b0267?w=800&q=80'],
     coordinates: {
       latitude: f.lat ?? 43.0731,
@@ -159,7 +162,12 @@ export async function postSwipe(payload: {
   return http<{ ok: boolean }>('/v1/swipe', { method: 'POST', body: JSON.stringify(payload) });
 }
 
-export async function postSuperLike(payload: { user_id: string; listing_id: string; body: string }) {
+export async function postSuperLike(payload: {
+  user_id: string;
+  listing_id: string;
+  /** Optional; omit or empty for no visible message (server stores a placeholder). */
+  body?: string | null;
+}) {
   return http<{ ok: boolean; message?: string | null }>('/v1/swipe/super-like', {
     method: 'POST',
     body: JSON.stringify(payload),

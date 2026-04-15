@@ -17,6 +17,20 @@ router = APIRouter(prefix="/v1/likes", tags=["likes"])
 _EMPTY_LIKE_SEED = "\u200b"
 
 
+# Only valid Roomie flows: seeker→host on a listing, or host→seeker on that host's listing.
+_SENT_FLOW_FILTER = """
+    AND (
+      (i.recipient_id = l.host_id AND i.sender_id <> l.host_id)
+      OR (i.sender_id = l.host_id AND i.recipient_id <> l.host_id)
+    )
+"""
+_RECEIVED_FLOW_FILTER = """
+    AND (
+      (l.host_id = i.recipient_id AND i.sender_id <> l.host_id)
+      OR (l.host_id = i.sender_id AND i.recipient_id <> l.host_id)
+    )
+"""
+
 _BASE_SQL = """
   SELECT
     i.id AS interest_id,
@@ -41,6 +55,7 @@ _BASE_SQL = """
   LEFT JOIN conversations conv ON conv.match_id = mat.id
   WHERE i.{where_uid} = %s::uuid
     AND i.state IN ('pending', 'accepted')
+    {flow_filter}
   ORDER BY i.created_at DESC
   LIMIT %s
 """
@@ -90,6 +105,7 @@ def likes_sent(
         listing_title=LISTING_DISPLAY_TITLE,
         cp_join="i.recipient_id",
         where_uid="sender_id",
+        flow_filter=_SENT_FLOW_FILTER,
     )
     with connection() as conn:
         with conn.cursor() as cur:
@@ -123,6 +139,7 @@ def likes_received(
         listing_title=LISTING_DISPLAY_TITLE,
         cp_join="i.sender_id",
         where_uid="recipient_id",
+        flow_filter=_RECEIVED_FLOW_FILTER,
     )
     with connection() as conn:
         with conn.cursor() as cur:

@@ -144,6 +144,18 @@ function formatDate(iso: string) {
   return `${months[parseInt(m, 10) - 1]} ${parseInt(d, 10)}`;
 }
 
+function formatLeaseRange(startIso: string, endIso: string) {
+  return `${formatDate(startIso)} – ${formatDate(endIso)}`;
+}
+
+function propertyUtilitiesCaption(p: Property): string | null {
+  if (p.utilitiesIncluded) return 'Utilities included';
+  const t = (p.utilitiesDescription ?? '').replace(/\s+/g, ' ').trim();
+  if (t.length > 0) return t.length > 56 ? `${t.slice(0, 54)}…` : t;
+  if (p.avgUtilityFee > 0) return `Utilities ~$${p.avgUtilityFee}/mo`;
+  return null;
+}
+
 function createLikesSections(mode: AppMode): LikeSection[] {
   if (mode === 'seeker') {
     return [
@@ -397,6 +409,7 @@ function PropertyCardContent({
   onLike?: () => void;
   onSuperLike?: () => void;
 }) {
+  const utilsLine = propertyUtilitiesCaption(property);
   return (
     <View style={styles.cardInner}>
       <ImageCarousel imageUrls={property.imageUrls} />
@@ -410,6 +423,12 @@ function PropertyCardContent({
         </Text>
         <View style={styles.cardInfoDivider} />
         <Text style={styles.subletPrice}>${property.subletPrice}/mo</Text>
+        <Text style={[styles.dateText, { marginTop: 8 }]}>Lease {formatLeaseRange(property.availableStartDate, property.availableEndDate)}</Text>
+        {utilsLine ? (
+          <Text style={[styles.utilityText, { marginTop: 4 }]} numberOfLines={2}>
+            {utilsLine}
+          </Text>
+        ) : null}
       </View>
       {/* Detail expand button */}
       {onShowDetail && (
@@ -636,7 +655,15 @@ function PropertyDetailModal({ property, visible, onClose }: { property: Propert
               <View style={styles.modalInfoItem}>
                 <Ionicons name="flash-outline" size={20} color="#FDCB6E" />
                 <Text style={styles.modalInfoLabel}>Utilities</Text>
-                <Text style={styles.modalInfoValue}>+${property.avgUtilityFee}/mo</Text>
+                <Text style={styles.modalInfoValue}>
+                  {property.utilitiesIncluded
+                    ? 'Included in rent'
+                    : (property.utilitiesDescription || '').trim()
+                      ? (property.utilitiesDescription || '').trim()
+                      : property.avgUtilityFee > 0
+                        ? `+~$${property.avgUtilityFee}/mo`
+                        : 'Ask host'}
+                </Text>
               </View>
               <View style={styles.modalInfoItem}>
                 <Ionicons name="people-outline" size={20} color="#E91E8C" />
@@ -1059,7 +1086,7 @@ function SuperLikeHighlightList({ items, variant }: { items: SuperLikeItemDto[];
             {variant === 'received' ? `from ${it.counterparty_name}` : `to ${it.counterparty_name}`}
           </Text>
           <Text style={styles.superLikeHighlightBody} numberOfLines={3}>
-            {it.body}
+            {(it.body || '').replace(/\u200b/g, '').trim() || 'No message'}
           </Text>
           <Text style={styles.superLikeHighlightMeta}>
             ${it.price_monthly}/mo · {it.address}
@@ -1071,7 +1098,7 @@ function SuperLikeHighlightList({ items, variant }: { items: SuperLikeItemDto[];
 }
 
 function likeNotePreview(note: string | null | undefined): string {
-  const t = (note ?? '').trim();
+  const t = (note ?? '').replace(/\u200b/g, '').trim();
   return t.length > 0 ? t : 'Like without a message';
 }
 
@@ -1084,7 +1111,7 @@ function LikesFromApi({
   role: 'seeker' | 'host';
   onOpenChat?: (conversationId: string) => void;
 }) {
-  const [tab, setTab] = React.useState<'sent' | 'received'>('sent');
+  const [tab, setTab] = React.useState<'sent' | 'received'>('received');
   const [items, setItems] = React.useState<LikeItemDto[]>([]);
   const [superSent, setSuperSent] = React.useState<SuperLikeItemDto[]>([]);
   const [superReceived, setSuperReceived] = React.useState<SuperLikeItemDto[]>([]);
@@ -1136,7 +1163,11 @@ function LikesFromApi({
       >
         <UtilityTabHeader
           title="Likes"
-          subtitle="Review likes with optional notes, then accept or decline. Accepting opens a chat."
+          subtitle={
+            role === 'seeker'
+              ? 'Received shows hosts who liked you; Sent shows likes you sent to listings. Optional notes appear on each row.'
+              : 'Received shows seekers who liked your listing; Sent shows likes you sent to seekers. Accept to open chat.'
+          }
         />
         {superStrip}
         <View style={styles.likesSegmentRow}>
@@ -1145,7 +1176,7 @@ function LikesFromApi({
             onPress={() => setTab('sent')}
           >
             <Text style={[styles.likesSegmentLabel, tab === 'sent' && styles.likesSegmentLabelActive]}>
-              {role === 'seeker' ? 'Sent to listings' : 'Sent'}
+              {role === 'seeker' ? 'Sent (to hosts)' : 'Sent (to seekers)'}
             </Text>
           </TouchableOpacity>
           <TouchableOpacity
@@ -1153,7 +1184,7 @@ function LikesFromApi({
             onPress={() => setTab('received')}
           >
             <Text style={[styles.likesSegmentLabel, tab === 'received' && styles.likesSegmentLabelActive]}>
-              {role === 'seeker' ? 'Received' : 'Received'}
+              {role === 'seeker' ? 'Received (from hosts)' : 'Received (from seekers)'}
             </Text>
           </TouchableOpacity>
         </View>
@@ -2189,6 +2220,7 @@ export default function App() {
   const [superLikeInboxCount, setSuperLikeInboxCount] = useState(0);
   const [likeCommentOpen, setLikeCommentOpen] = useState(false);
   const [likeCommentDraft, setLikeCommentDraft] = useState('');
+  const [seekerLikeCardReset, setSeekerLikeCardReset] = useState(0);
   const [apiChatFocusId, setApiChatFocusId] = useState<string | null>(null);
   const clearApiChatFocus = useCallback(() => setApiChatFocusId(null), []);
 
@@ -2510,9 +2542,14 @@ export default function App() {
       promptGuestAuth();
       return;
     }
-    if (mode === 'seeker') finalizeSeekerSwipe('like');
-    else setSeekers(s => s.slice(1));
-  }, [isGuest, mode, finalizeSeekerSwipe, promptGuestAuth]);
+    if (mode === 'seeker') {
+      setLikeCommentDraft('');
+      setSeekerLikeCardReset(n => n + 1);
+      setLikeCommentOpen(true);
+      return;
+    }
+    setSeekers(s => s.slice(1));
+  }, [isGuest, mode, promptGuestAuth]);
 
   const handleFeedBack = useCallback(async () => {
     if (isGuest || !USE_API_FEED || !currentUser?.id || mode !== 'seeker') return;
@@ -2716,9 +2753,9 @@ export default function App() {
             [...visibleCards].reverse().map((item, reversedIndex) => {
               const index = visibleCards.length - 1 - reversedIndex;
               const isTopCard = index === 0;
-              const key = mode === 'seeker'
-                ? (item as Property).id
-                : (item as SeekerCard).user.id;
+              const baseKey = mode === 'seeker' ? (item as Property).id : (item as SeekerCard).user.id;
+              const key =
+                mode === 'seeker' && isTopCard ? `${baseKey}-lk-${seekerLikeCardReset}` : baseKey;
               return (
                 <SwipeCard
                   key={key}
@@ -2827,11 +2864,11 @@ export default function App() {
         <View style={styles.superLikeOverlay}>
           <View style={styles.superLikeSheet}>
             <Text style={styles.superLikeTitle}>Super like (once per day)</Text>
-            <Text style={styles.superLikeHint}>Add an offer or a short question.</Text>
+            <Text style={styles.superLikeHint}>Optional message (up to 500 characters), like Hinge.</Text>
             <TextInput
               value={superLikeDraft}
-              onChangeText={setSuperLikeDraft}
-              placeholder="Message (1–500 characters)"
+              onChangeText={t => setSuperLikeDraft(t.length > 500 ? t.slice(0, 500) : t)}
+              placeholder="Message (optional)"
               placeholderTextColor="#888"
               multiline
               style={styles.superLikeInput}
@@ -2845,15 +2882,15 @@ export default function App() {
                 onPress={async () => {
                   const text = superLikeDraft.trim();
                   const lid = superLikeListingIdRef.current;
-                  if (!text || !lid || !currentUser?.id) {
-                    Alert.alert('Super like', 'Please enter a message.');
+                  if (!lid || !currentUser?.id) {
+                    setSuperLikeOpen(false);
                     return;
                   }
                   try {
                     const r = await postSuperLike({
                       user_id: currentUser.id,
                       listing_id: lid,
-                      body: text,
+                      ...(text ? { body: text } : {}),
                     });
                     if (!r.ok) {
                       Alert.alert('Super like', r.message || 'Already used today.');

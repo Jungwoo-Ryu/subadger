@@ -34,6 +34,10 @@ export interface Property {
   roomType: RoomType;
   furnished: boolean;
   rules: string[];
+  /** From feed: landlord copy about utilities (e.g. "W/S/T included"). */
+  utilitiesDescription?: string | null;
+  /** From feed: rent includes utilities. */
+  utilitiesIncluded?: boolean;
 }
 
 export interface SeekerProfile {

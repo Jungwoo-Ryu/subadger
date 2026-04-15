@@ -1,4 +1,5 @@
 import threading
+from typing import Optional
 
 import psycopg.errors
 from uuid import UUID
@@ -13,6 +14,16 @@ router = APIRouter(prefix="/v1", tags=["super-like"])
 
 _super_likes_lock = threading.Lock()
 _super_likes_ready: bool | None = None
+
+# DB requires char_length(body) >= 1; invisible placeholder when client sends no text.
+_EMPTY_SUPER_LIKE_BODY = "\u200b"
+
+
+def _normalize_super_like_body(raw: Optional[str]) -> str:
+    t = (raw or "").strip()
+    if not t:
+        return _EMPTY_SUPER_LIKE_BODY
+    return t[:500]
 
 
 def _invalidate_super_likes_cache() -> None:
@@ -113,7 +124,12 @@ def super_like(body: SuperLikeRequest):
                         INSERT INTO public.super_likes (sender_id, recipient_id, listing_id, body)
                         VALUES (%s, %s, %s, %s)
                         """,
-                        (str(body.user_id), str(host_id), str(body.listing_id), body.body.strip()),
+                        (
+                            str(body.user_id),
+                            str(host_id),
+                            str(body.listing_id),
+                            _normalize_super_like_body(body.body),
+                        ),
                     )
                 except psycopg.errors.UndefinedTable:
                     conn.rollback()

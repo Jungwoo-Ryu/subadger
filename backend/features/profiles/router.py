@@ -33,7 +33,22 @@ def _columns_for_table(cur, table: str) -> list[str]:
         """,
         (table,),
     )
-    return [r[0] for r in cur.fetchall()]
+    rows = cur.fetchall()
+    cols: list[str] = []
+    for r in rows:
+        name = None
+        if isinstance(r, dict):
+            name = r.get("column_name")
+            if name is None and r:
+                name = next(iter(r.values()))
+        else:
+            try:
+                name = r[0]
+            except (TypeError, KeyError, IndexError):
+                name = None
+        if isinstance(name, str):
+            cols.append(name)
+    return cols
 
 
 def _profiles_columns(cur) -> list[str]:
