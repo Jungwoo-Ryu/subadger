@@ -1,4 +1,14 @@
-import React, { useState, useCallback, useRef, useImperativeHandle, forwardRef, useEffect } from 'react';
+import React, {
+  useState,
+  useCallback,
+  useRef,
+  useImperativeHandle,
+  forwardRef,
+  useEffect,
+  useLayoutEffect,
+  useContext,
+  createContext,
+} from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -15,6 +25,8 @@ import {
   Modal,
   ScrollView,
   TextInput,
+  Keyboard,
+  useWindowDimensions,
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -129,6 +141,188 @@ const COLORS = {
   white: '#FFFFFF',
 };
 
+/** Drives bottom action buttons (Tinder-style) from the same pan progress as LIKE/NOPE stamps. */
+type SwipeDeckPan = { likeProgress: Animated.Value; nopeProgress: Animated.Value };
+const SwipeDeckPanContext = createContext<SwipeDeckPan | null>(null);
+
+/** Tinder-style: only the control matching swipe direction stays visible; others fade out, then return when the gesture ends. */
+function useSwipeDeckActionInterpolation() {
+  const ctx = useContext(SwipeDeckPanContext);
+  if (!ctx) return null;
+  const { likeProgress, nopeProgress } = ctx;
+  const hideOnLikeDrag = likeProgress.interpolate({ inputRange: [0, 1], outputRange: [1, 0] });
+  const hideOnNopeDrag = nopeProgress.interpolate({ inputRange: [0, 1], outputRange: [1, 0] });
+  /** X, super, chevron — hidden while swiping right (heart is the focus). */
+  const auxiliaryOpacity = Animated.multiply(hideOnLikeDrag, hideOnNopeDrag);
+  return {
+    nopeOpacity: hideOnLikeDrag,
+    likeOpacity: hideOnNopeDrag,
+    superOpacity: auxiliaryOpacity,
+    detailOpacity: auxiliaryOpacity,
+  };
+}
+
+/** Fade chrome in when this card becomes the top of the deck (after swipe or first load). */
+function useDeckChromeEntrance(active: boolean, cardKey: string) {
+  const entrance = useRef(new Animated.Value(0)).current;
+  useLayoutEffect(() => {
+    if (!active) return;
+    entrance.setValue(0);
+    const anim = Animated.timing(entrance, {
+      toValue: 1,
+      duration: 200,
+      useNativeDriver: true,
+    });
+    anim.start();
+    return () => anim.stop();
+  }, [active, cardKey, entrance]);
+  return entrance;
+}
+
+const DECK_ACTION_SIZE = 76;
+const DECK_NOPE_FILL = '#FF2D55';
+const DECK_LIKE_FILL = '#22C55E';
+const DECK_EMPHASIS_ICON = '#0D0D0D';
+
+/** Solid red circle + black X while swiping left; reverts when gesture cancels. */
+function DeckNopeSwipeButton({
+  onPress,
+  containerOpacity,
+  emphasis,
+}: {
+  onPress: () => void;
+  /** Combined entrance × swipe fade (native-driver safe). */
+  containerOpacity: any;
+  emphasis: Animated.Value;
+}) {
+  const iconIdle = emphasis.interpolate({ inputRange: [0, 1], outputRange: [1, 0] });
+  const iconBold = emphasis.interpolate({ inputRange: [0, 1], outputRange: [0, 1] });
+  const ringFade = emphasis.interpolate({ inputRange: [0, 1], outputRange: [1, 0] });
+  return (
+    <Animated.View style={{ opacity: containerOpacity }}>
+      <TouchableOpacity
+        onPress={onPress}
+        activeOpacity={0.9}
+        style={deckActionEmphasisStyles.touch}
+      >
+        <View style={deckActionEmphasisStyles.circleClip}>
+          <View style={[StyleSheet.absoluteFill, { backgroundColor: '#1A1A1A' }]} />
+          <Animated.View
+            pointerEvents="none"
+            style={[
+              StyleSheet.absoluteFill,
+              {
+                backgroundColor: DECK_NOPE_FILL,
+                opacity: emphasis,
+              },
+            ]}
+          />
+          <View style={deckActionEmphasisStyles.iconLayer}>
+            <Animated.View style={{ opacity: iconIdle, position: 'absolute' }}>
+              <Ionicons name="close" size={38} color={COLORS.danger} />
+            </Animated.View>
+            <Animated.View style={{ opacity: iconBold, position: 'absolute' }}>
+              <Ionicons name="close" size={38} color={DECK_EMPHASIS_ICON} />
+            </Animated.View>
+          </View>
+          <Animated.View
+            pointerEvents="none"
+            style={[
+              StyleSheet.absoluteFill,
+              {
+                borderRadius: DECK_ACTION_SIZE / 2,
+                borderWidth: 2,
+                borderColor: 'rgba(255,23,68,0.55)',
+                opacity: ringFade,
+              },
+            ]}
+          />
+        </View>
+      </TouchableOpacity>
+    </Animated.View>
+  );
+}
+
+/** Solid green circle + black heart while swiping right. */
+function DeckLikeSwipeButton({
+  onPress,
+  containerOpacity,
+  emphasis,
+}: {
+  onPress: () => void;
+  /** Combined entrance × swipe fade (native-driver safe). */
+  containerOpacity: any;
+  emphasis: Animated.Value;
+}) {
+  const iconIdle = emphasis.interpolate({ inputRange: [0, 1], outputRange: [1, 0] });
+  const iconBold = emphasis.interpolate({ inputRange: [0, 1], outputRange: [0, 1] });
+  const ringFade = emphasis.interpolate({ inputRange: [0, 1], outputRange: [1, 0] });
+  return (
+    <Animated.View style={{ opacity: containerOpacity }}>
+      <TouchableOpacity
+        onPress={onPress}
+        activeOpacity={0.9}
+        style={deckActionEmphasisStyles.touch}
+      >
+        <View style={deckActionEmphasisStyles.circleClip}>
+          <View style={[StyleSheet.absoluteFill, { backgroundColor: '#1A1A1A' }]} />
+          <Animated.View
+            pointerEvents="none"
+            style={[
+              StyleSheet.absoluteFill,
+              {
+                backgroundColor: DECK_LIKE_FILL,
+                opacity: emphasis,
+              },
+            ]}
+          />
+          <View style={deckActionEmphasisStyles.iconLayer}>
+            <Animated.View style={{ opacity: iconIdle, position: 'absolute' }}>
+              <Ionicons name="heart" size={34} color={COLORS.success} />
+            </Animated.View>
+            <Animated.View style={{ opacity: iconBold, position: 'absolute' }}>
+              <Ionicons name="heart" size={34} color={DECK_EMPHASIS_ICON} />
+            </Animated.View>
+          </View>
+          <Animated.View
+            pointerEvents="none"
+            style={[
+              StyleSheet.absoluteFill,
+              {
+                borderRadius: DECK_ACTION_SIZE / 2,
+                borderWidth: 2,
+                borderColor: 'rgba(0,200,83,0.55)',
+                opacity: ringFade,
+              },
+            ]}
+          />
+        </View>
+      </TouchableOpacity>
+    </Animated.View>
+  );
+}
+
+const deckActionEmphasisStyles = StyleSheet.create({
+  touch: {
+    width: DECK_ACTION_SIZE,
+    height: DECK_ACTION_SIZE,
+  },
+  circleClip: {
+    width: DECK_ACTION_SIZE,
+    height: DECK_ACTION_SIZE,
+    borderRadius: DECK_ACTION_SIZE / 2,
+    overflow: 'hidden',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  iconLayer: {
+    width: DECK_ACTION_SIZE,
+    height: DECK_ACTION_SIZE,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+});
+
 const HOST_CONTACTS = [
   'Olivia Carter',
   'Daniel Kim',
@@ -175,7 +369,7 @@ function createLikesSections(mode: AppMode): LikeSection[] {
       },
       {
         key: 'offer',
-        title: 'Offer Sent From Other Users',
+        title: 'Sent offers',
         items: MOCK_PROPERTIES.slice(0, 2).map((property, index) => ({
           id: `offer-${property.id}`,
           name: HOST_CONTACTS[index],
@@ -218,7 +412,7 @@ function createLikesSections(mode: AppMode): LikeSection[] {
     },
     {
       key: 'offer',
-      title: 'Offer Sent From Other Users',
+      title: 'Received offers',
       items: MOCK_SEEKER_CARDS.slice(0, 2).map((card, index) => ({
         id: `offer-${card.user.id}`,
         name: card.user.name,
@@ -386,17 +580,33 @@ function GenderTag({ gender }: { gender: string }) {
 // ─── Property Card Content ────────────────────────────────────────────────────
 function PropertyCardContent({
   property,
+  isDeckTop,
   onShowDetail,
   onNope,
   onLike,
   onSuperLike,
 }: {
   property: Property;
+  /** Only the front card shows controls; next card reveals chrome when promoted. */
+  isDeckTop: boolean;
   onShowDetail?: () => void;
   onNope?: () => void;
   onLike?: () => void;
   onSuperLike?: () => void;
 }) {
+  const deckAnim = useSwipeDeckActionInterpolation();
+  const entrance = useDeckChromeEntrance(isDeckTop, property.id);
+  const pan = useContext(SwipeDeckPanContext);
+
+  const nopeOp =
+    deckAnim && isDeckTop ? Animated.multiply(entrance, deckAnim.nopeOpacity) : entrance;
+  const likeOp =
+    deckAnim && isDeckTop ? Animated.multiply(entrance, deckAnim.likeOpacity) : entrance;
+  const superOp =
+    deckAnim && isDeckTop ? Animated.multiply(entrance, deckAnim.superOpacity) : entrance;
+  const detailOp =
+    deckAnim && isDeckTop ? Animated.multiply(entrance, deckAnim.detailOpacity) : entrance;
+
   return (
     <View style={styles.cardInner}>
       <ImageCarousel imageUrls={property.imageUrls} />
@@ -404,48 +614,79 @@ function PropertyCardContent({
       <LinearGradient colors={['transparent', 'rgba(0,0,0,0.4)', 'rgba(0,0,0,0.8)', '#000']} style={styles.gradient} />
       <View style={styles.cardInfo}>
         <Text style={styles.apartmentName} numberOfLines={2}>{property.apartmentName}</Text>
-        <View style={styles.cardInfoDivider} />
         <Text style={styles.address} numberOfLines={2}>
           {property.address}
         </Text>
-        <View style={styles.cardInfoDivider} />
         <Text style={styles.subletPrice}>${property.subletPrice}/mo</Text>
       </View>
-      {/* Detail expand button */}
-      {onShowDetail && (
-        <TouchableOpacity style={styles.detailBtn} onPress={onShowDetail} activeOpacity={0.8}>
-          <Ionicons name="chevron-up" size={18} color="#FFF" />
-        </TouchableOpacity>
-      )}
-      {/* Action buttons — bottom of swipe card (Like / No + optional Super) */}
-      {onNope && onLike && (
-        <View style={styles.actions} pointerEvents="box-none">
-          <TouchableOpacity style={[styles.actionBtn, styles.actionNope]} onPress={onNope} activeOpacity={0.85}>
-            <Ionicons name="close" size={38} color={COLORS.danger} />
+      {isDeckTop && onShowDetail ? (
+        <Animated.View style={{ opacity: detailOp }} pointerEvents="box-none">
+          <TouchableOpacity style={styles.detailBtn} onPress={onShowDetail} activeOpacity={0.8}>
+            <Ionicons name="chevron-up" size={18} color="#FFF" />
           </TouchableOpacity>
+        </Animated.View>
+      ) : null}
+      {isDeckTop && onNope && onLike ? (
+        <View style={styles.actions} pointerEvents="box-none">
+          {pan ? (
+            <DeckNopeSwipeButton
+              onPress={onNope}
+              containerOpacity={nopeOp as any}
+              emphasis={pan.nopeProgress}
+            />
+          ) : null}
           {onSuperLike ? (
-            <TouchableOpacity
-              style={[styles.actionBtn, styles.actionSuper]}
-              onPress={onSuperLike}
-              activeOpacity={0.85}
-            >
-              <Ionicons name="star" size={30} color="#FFD54F" />
-            </TouchableOpacity>
+            <Animated.View style={{ opacity: superOp }}>
+              <TouchableOpacity
+                style={[styles.actionBtn, styles.actionSuper]}
+                onPress={onSuperLike}
+                activeOpacity={0.85}
+              >
+                <Ionicons name="star" size={30} color="#FFD54F" />
+              </TouchableOpacity>
+            </Animated.View>
           ) : (
             <View style={styles.actionSuperSpacer} />
           )}
-          <TouchableOpacity style={[styles.actionBtn, styles.actionLike]} onPress={onLike} activeOpacity={0.85}>
-            <Ionicons name="heart" size={34} color={COLORS.success} />
-          </TouchableOpacity>
+          {pan ? (
+            <DeckLikeSwipeButton
+              onPress={onLike}
+              containerOpacity={likeOp as any}
+              emphasis={pan.likeProgress}
+            />
+          ) : null}
         </View>
-      )}
+      ) : null}
     </View>
   );
 }
 
 // ─── Seeker Card Content ──────────────────────────────────────────────────────
-function SeekerCardContent({ card, onShowDetail, onNope, onLike }: { card: SeekerCard; onShowDetail?: () => void; onNope?: () => void; onLike?: () => void }) {
+function SeekerCardContent({
+  card,
+  isDeckTop,
+  onShowDetail,
+  onNope,
+  onLike,
+}: {
+  card: SeekerCard;
+  isDeckTop: boolean;
+  onShowDetail?: () => void;
+  onNope?: () => void;
+  onLike?: () => void;
+}) {
   const { user, profile } = card;
+  const deckAnim = useSwipeDeckActionInterpolation();
+  const entrance = useDeckChromeEntrance(isDeckTop, user.id);
+  const pan = useContext(SwipeDeckPanContext);
+
+  const nopeOp =
+    deckAnim && isDeckTop ? Animated.multiply(entrance, deckAnim.nopeOpacity) : entrance;
+  const likeOp =
+    deckAnim && isDeckTop ? Animated.multiply(entrance, deckAnim.likeOpacity) : entrance;
+  const detailOp =
+    deckAnim && isDeckTop ? Animated.multiply(entrance, deckAnim.detailOpacity) : entrance;
+
   return (
     <View style={styles.cardInner}>
       <ImageCarousel imageUrls={user.imageUrls} />
@@ -456,23 +697,31 @@ function SeekerCardContent({ card, onShowDetail, onNope, onLike }: { card: Seeke
         {user.bio ? <Text style={styles.address} numberOfLines={1}>{user.bio}</Text> : null}
         <Text style={styles.subletPrice}>${profile.targetPriceMin} – ${profile.targetPriceMax}/mo</Text>
       </View>
-      {/* Detail expand button */}
-      {onShowDetail && (
-        <TouchableOpacity style={styles.detailBtn} onPress={onShowDetail} activeOpacity={0.8}>
-          <Ionicons name="chevron-up" size={18} color="#FFF" />
-        </TouchableOpacity>
-      )}
-      {/* Action buttons inside card */}
-      {onNope && onLike && (
+      {isDeckTop && onShowDetail ? (
+        <Animated.View style={{ opacity: detailOp }} pointerEvents="box-none">
+          <TouchableOpacity style={styles.detailBtn} onPress={onShowDetail} activeOpacity={0.8}>
+            <Ionicons name="chevron-up" size={18} color="#FFF" />
+          </TouchableOpacity>
+        </Animated.View>
+      ) : null}
+      {isDeckTop && onNope && onLike ? (
         <View style={styles.actions} pointerEvents="box-none">
-          <TouchableOpacity style={[styles.actionBtn, styles.actionNope]} onPress={onNope} activeOpacity={0.85}>
-            <Ionicons name="close" size={38} color={COLORS.danger} />
-          </TouchableOpacity>
-          <TouchableOpacity style={[styles.actionBtn, styles.actionLike]} onPress={onLike} activeOpacity={0.85}>
-            <Ionicons name="heart" size={34} color={COLORS.success} />
-          </TouchableOpacity>
+          {pan ? (
+            <DeckNopeSwipeButton
+              onPress={onNope}
+              containerOpacity={nopeOp as any}
+              emphasis={pan.nopeProgress}
+            />
+          ) : null}
+          {pan ? (
+            <DeckLikeSwipeButton
+              onPress={onLike}
+              containerOpacity={likeOp as any}
+              emphasis={pan.likeProgress}
+            />
+          ) : null}
         </View>
-      )}
+      ) : null}
     </View>
   );
 }
@@ -826,23 +1075,63 @@ interface SwipeCardProps {
   onSwipedLeft: () => void;
   onSwipedRight: () => void;
   children: React.ReactNode;
+  /** When true, the top card does not capture horizontal pans (e.g. nested scroll). */
+  panDisabled?: boolean;
+  /** Return false to spring the card back instead of completing the swipe (e.g. guest preview). */
+  allowSwipeCommit?: (direction: 'left' | 'right') => boolean;
+  /** Called when a swipe crossed the threshold but `allowSwipeCommit` returned false. */
+  onSwipeDenied?: () => void;
 }
 
 export interface SwipeCardRef {
   triggerSwipe: (direction: 'left' | 'right') => void;
 }
 
-const SwipeCard = forwardRef<SwipeCardRef, SwipeCardProps>(({ index, onSwipedLeft, onSwipedRight, children }, ref) => {
+const SwipeCard = forwardRef<SwipeCardRef, SwipeCardProps>(
+  (
+    {
+      index,
+      onSwipedLeft,
+      onSwipedRight,
+      children,
+      panDisabled = false,
+      allowSwipeCommit,
+      onSwipeDenied,
+    },
+    ref,
+  ) => {
   const isTop = index === 0;
   const isTopRef = useRef(isTop);
   isTopRef.current = isTop;
+  const panDisabledRef = useRef(panDisabled);
+  panDisabledRef.current = panDisabled;
+  const allowSwipeCommitRef = useRef(allowSwipeCommit);
+  allowSwipeCommitRef.current = allowSwipeCommit;
+  const onSwipeDeniedRef = useRef(onSwipeDenied);
+  onSwipeDeniedRef.current = onSwipeDenied;
 
   const position = useRef(new Animated.ValueXY()).current;
   const likeOpacity = useRef(new Animated.Value(0)).current;
   const nopeOpacity = useRef(new Animated.Value(0)).current;
 
+  const springBackRef = useRef(() => {});
+  springBackRef.current = () => {
+    Animated.parallel([
+      Animated.spring(position, { toValue: { x: 0, y: 0 }, useNativeDriver: true }),
+      Animated.timing(likeOpacity, { toValue: 0, duration: 200, useNativeDriver: true }),
+      Animated.timing(nopeOpacity, { toValue: 0, duration: 200, useNativeDriver: true }),
+    ]).start();
+  };
+
   useImperativeHandle(ref, () => ({
     triggerSwipe: (direction: 'left' | 'right') => {
+      if (panDisabledRef.current) return;
+      const allowed =
+        allowSwipeCommitRef.current == null || allowSwipeCommitRef.current(direction);
+      if (!allowed) {
+        onSwipeDeniedRef.current?.();
+        return;
+      }
       const xTarget = direction === 'right' ? SCREEN_WIDTH * 1.5 : -SCREEN_WIDTH * 1.5;
       const stampOpacity = direction === 'right' ? likeOpacity : nopeOpacity;
       Animated.parallel([
@@ -862,7 +1151,8 @@ const SwipeCard = forwardRef<SwipeCardRef, SwipeCardProps>(({ index, onSwipedLef
   const panResponder = useRef(
     PanResponder.create({
       onStartShouldSetPanResponder: () => false,
-      onMoveShouldSetPanResponder: (_, g) => isTopRef.current && Math.abs(g.dx) > 8,
+      onMoveShouldSetPanResponder: (_, g) =>
+        isTopRef.current && !panDisabledRef.current && Math.abs(g.dx) > 8,
       onPanResponderMove: (_, g) => {
         position.setValue({ x: g.dx, y: g.dy });
         const ratio = Math.abs(g.dx) / SWIPE_THRESHOLD;
@@ -876,12 +1166,26 @@ const SwipeCard = forwardRef<SwipeCardRef, SwipeCardProps>(({ index, onSwipedLef
       },
       onPanResponderRelease: (_, g) => {
         if (g.dx > SWIPE_THRESHOLD) {
+          const allowed =
+            allowSwipeCommitRef.current == null || allowSwipeCommitRef.current('right');
+          if (!allowed) {
+            onSwipeDeniedRef.current?.();
+            springBackRef.current();
+            return;
+          }
           Animated.timing(position, {
             toValue: { x: SCREEN_WIDTH * 1.5, y: g.dy + 50 },
             duration: 320,
             useNativeDriver: true,
           }).start(() => onSwipedRight());
         } else if (g.dx < -SWIPE_THRESHOLD) {
+          const allowed =
+            allowSwipeCommitRef.current == null || allowSwipeCommitRef.current('left');
+          if (!allowed) {
+            onSwipeDeniedRef.current?.();
+            springBackRef.current();
+            return;
+          }
           Animated.timing(position, {
             toValue: { x: -SCREEN_WIDTH * 1.5, y: g.dy + 50 },
             duration: 320,
@@ -904,10 +1208,11 @@ const SwipeCard = forwardRef<SwipeCardRef, SwipeCardProps>(({ index, onSwipedLef
     extrapolate: 'clamp',
   });
 
-  // Back cards: same size, no gesture — ready to show instantly
+  // Back cards: same chrome as the top card (TikTok-style: controls stay glued to the preview).
+  // `pointerEvents="none"` keeps touches on the animating top card until this layer is promoted.
   if (!isTop) {
     return (
-      <View style={styles.card}>
+      <View style={styles.card} pointerEvents="none">
         {children}
       </View>
     );
@@ -916,9 +1221,11 @@ const SwipeCard = forwardRef<SwipeCardRef, SwipeCardProps>(({ index, onSwipedLef
   return (
     <Animated.View
       style={[styles.card, { transform: [{ translateX: position.x }, { translateY: position.y }, { rotate }] }]}
-      {...panResponder.panHandlers}
+      {...(panDisabled ? {} : panResponder.panHandlers)}
     >
-      {children}
+      <SwipeDeckPanContext.Provider value={{ likeProgress: likeOpacity, nopeProgress: nopeOpacity }}>
+        {children}
+      </SwipeDeckPanContext.Provider>
       {/* LIKE stamp */}
       <Animated.View style={[styles.stamp, styles.stampLike, { opacity: likeOpacity }]} pointerEvents="none">
         <Text style={[styles.stampText, { color: COLORS.success }]}>LIKE</Text>
@@ -938,7 +1245,6 @@ function DashboardHeader({
   onBack,
   showBack,
   isGuest,
-  onGuestLogin,
   onGuestBack,
 }: {
   onLogout: () => void;
@@ -946,7 +1252,6 @@ function DashboardHeader({
   onBack?: () => void;
   showBack?: boolean;
   isGuest?: boolean;
-  onGuestLogin?: () => void;
   onGuestBack?: () => void;
 }) {
   return (
@@ -962,11 +1267,7 @@ function DashboardHeader({
       ) : (
         <View style={styles.headerIconBtn} />
       )}
-      {isGuest && onGuestLogin ? (
-        <TouchableOpacity style={styles.headerLoginBtn} onPress={onGuestLogin} activeOpacity={0.85}>
-          <Text style={styles.headerLoginBtnText}>Log in · Sign up</Text>
-        </TouchableOpacity>
-      ) : (
+      {!isGuest ? (
         <TouchableOpacity
           style={styles.logoutBtn}
           onPress={onLogout}
@@ -979,6 +1280,8 @@ function DashboardHeader({
             <Ionicons name="log-out-outline" size={20} color="#FFF" />
           )}
         </TouchableOpacity>
+      ) : (
+        <View style={styles.headerIconBtn} />
       )}
     </View>
   );
@@ -1035,12 +1338,42 @@ function TabPlaceholder({ title, subtitle, icon }: { title: string; subtitle: st
 function UtilityTabHeader({ title, subtitle }: { title: string; subtitle: string }) {
   return (
     <View style={styles.utilityHeader}>
-      <View style={styles.utilityHeaderBadge}>
-        <Text style={styles.utilityHeaderBadgeText}>Roomie</Text>
-      </View>
       <Text style={styles.utilityHeaderTitle}>{title}</Text>
       <Text style={styles.utilityHeaderSubtitle}>{subtitle}</Text>
     </View>
+  );
+}
+
+function GuestProfileTabContent({
+  onLogInSignUp,
+  rolePreview,
+}: {
+  onLogInSignUp: () => void;
+  rolePreview: 'seeker' | 'host';
+}) {
+  const roleLine =
+    rolePreview === 'seeker'
+      ? "You're previewing as a seeker. Create an account to save likes, message hosts, and edit your profile."
+      : "You're previewing as a host. Create an account to manage listings, chat with seekers, and edit your profile.";
+
+  return (
+    <ScrollView style={styles.utilityScroll} contentContainerStyle={styles.utilityScrollContent}>
+      <UtilityTabHeader
+        title="Profile"
+        subtitle="Sign in to manage your account, preferences, and messages."
+      />
+      <View style={styles.guestProfileCard}>
+        <View style={styles.guestProfileAvatarWrap}>
+          <Ionicons name="person" size={40} color="rgba(255,255,255,0.38)" />
+        </View>
+        <Text style={styles.guestProfileCardTitle}>Browsing as a guest</Text>
+        <Text style={styles.guestProfileCardBody}>{roleLine}</Text>
+        <TouchableOpacity style={styles.guestProfilePrimaryBtn} onPress={onLogInSignUp} activeOpacity={0.85}>
+          <Text style={styles.guestProfilePrimaryBtnText}>Log in or sign up</Text>
+          <Ionicons name="arrow-forward" size={18} color="#FFF" />
+        </TouchableOpacity>
+      </View>
+    </ScrollView>
   );
 }
 
@@ -1075,6 +1408,8 @@ function likeNotePreview(note: string | null | undefined): string {
   return t.length > 0 ? t : 'Like without a message';
 }
 
+type LikesSubTabKey = 'received' | 'sent' | 'offers';
+
 function LikesFromApi({
   userId,
   role,
@@ -1084,8 +1419,9 @@ function LikesFromApi({
   role: 'seeker' | 'host';
   onOpenChat?: (conversationId: string) => void;
 }) {
-  const [tab, setTab] = React.useState<'sent' | 'received'>('sent');
-  const [items, setItems] = React.useState<LikeItemDto[]>([]);
+  const [subTab, setSubTab] = React.useState<LikesSubTabKey>('received');
+  const [receivedItems, setReceivedItems] = React.useState<LikeItemDto[]>([]);
+  const [sentItems, setSentItems] = React.useState<LikeItemDto[]>([]);
   const [superSent, setSuperSent] = React.useState<SuperLikeItemDto[]>([]);
   const [superReceived, setSuperReceived] = React.useState<SuperLikeItemDto[]>([]);
   const [loading, setLoading] = React.useState(true);
@@ -1097,19 +1433,22 @@ function LikesFromApi({
     (async () => {
       setLoading(true);
       try {
-        const [res, supS, supR] = await Promise.all([
-          tab === 'sent' ? fetchLikesSent(userId) : fetchLikesReceived(userId),
+        const [recv, sent, supS, supR] = await Promise.all([
+          fetchLikesReceived(userId),
+          fetchLikesSent(userId),
           fetchSuperLikesSent(userId).catch(() => ({ items: [] as SuperLikeItemDto[] })),
           fetchSuperLikesReceived(userId).catch(() => ({ items: [] as SuperLikeItemDto[] })),
         ]);
         if (!cancelled) {
-          setItems(res.items);
+          setReceivedItems(recv.items);
+          setSentItems(sent.items);
           setSuperSent(supS.items);
           setSuperReceived(supR.items);
         }
       } catch {
         if (!cancelled) {
-          setItems([]);
+          setReceivedItems([]);
+          setSentItems([]);
           setSuperSent([]);
           setSuperReceived([]);
         }
@@ -1120,12 +1459,26 @@ function LikesFromApi({
     return () => {
       cancelled = true;
     };
-  }, [tab, userId, refreshKey]);
+  }, [userId, refreshKey]);
 
-  const superStrip =
-    role === 'seeker'
-      ? <SuperLikeHighlightList items={superSent} variant="sent" />
-      : <SuperLikeHighlightList items={superReceived} variant="received" />;
+  const offerCount = role === 'seeker' ? superSent.length : superReceived.length;
+  const likesHeaderSubtitle: Record<LikesSubTabKey, string> = {
+    received:
+      role === 'seeker'
+        ? 'Hosts who liked your profile. Accept to start a chat.'
+        : 'Seekers who liked your listing. Accept or decline each interest.',
+    sent:
+      role === 'seeker'
+        ? 'Listings you liked. Hosts may respond from their inbox.'
+        : 'Seekers you liked. They can accept from their Likes tab.',
+    offers:
+      role === 'seeker'
+        ? 'Super likes include a message and stand out to hosts.'
+        : 'Super likes from seekers include a message about your listing.',
+  };
+
+  const items = subTab === 'received' ? receivedItems : sentItems;
+  const isReceivedTab = subTab === 'received';
 
   return (
     <>
@@ -1134,116 +1487,141 @@ function LikesFromApi({
         contentContainerStyle={styles.utilityScrollContent}
         showsVerticalScrollIndicator={false}
       >
-        <UtilityTabHeader
-          title="Likes"
-          subtitle="Review likes with optional notes, then accept or decline. Accepting opens a chat."
-        />
-        {superStrip}
+        <UtilityTabHeader title="Likes" subtitle={likesHeaderSubtitle[subTab]} />
         <View style={styles.likesSegmentRow}>
           <TouchableOpacity
-            style={[styles.likesSegmentBtn, tab === 'sent' && styles.likesSegmentBtnActive]}
-            onPress={() => setTab('sent')}
+            style={[styles.likesSegmentBtn, subTab === 'received' && styles.likesSegmentBtnActive]}
+            onPress={() => setSubTab('received')}
           >
-            <Text style={[styles.likesSegmentLabel, tab === 'sent' && styles.likesSegmentLabelActive]}>
-              {role === 'seeker' ? 'Sent to listings' : 'Sent'}
+            <Text
+              style={[styles.likesSegmentLabel, subTab === 'received' && styles.likesSegmentLabelActive]}
+              numberOfLines={1}
+            >
+              Received{!loading ? ` (${receivedItems.length})` : ''}
             </Text>
           </TouchableOpacity>
           <TouchableOpacity
-            style={[styles.likesSegmentBtn, tab === 'received' && styles.likesSegmentBtnActive]}
-            onPress={() => setTab('received')}
+            style={[styles.likesSegmentBtn, subTab === 'sent' && styles.likesSegmentBtnActive]}
+            onPress={() => setSubTab('sent')}
           >
-            <Text style={[styles.likesSegmentLabel, tab === 'received' && styles.likesSegmentLabelActive]}>
-              {role === 'seeker' ? 'Received' : 'Received'}
+            <Text
+              style={[styles.likesSegmentLabel, subTab === 'sent' && styles.likesSegmentLabelActive]}
+              numberOfLines={1}
+            >
+              Sent{!loading ? ` (${sentItems.length})` : ''}
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.likesSegmentBtn, subTab === 'offers' && styles.likesSegmentBtnActive]}
+            onPress={() => setSubTab('offers')}
+          >
+            <Text
+              style={[styles.likesSegmentLabel, subTab === 'offers' && styles.likesSegmentLabelActive]}
+              numberOfLines={1}
+            >
+              Offers{!loading ? ` (${offerCount})` : ''}
             </Text>
           </TouchableOpacity>
         </View>
-        {loading ? null : items.length === 0 ? (
-        <Text style={styles.likesEmptyApi}>No items yet.</Text>
-      ) : (
-        <View style={styles.likesSectionCard}>
-          {items.map((it, index) => (
-            <View
-              key={it.interest_id}
-              style={[styles.likeItemRow, index < items.length - 1 && styles.likeItemRowBorder]}
-            >
-              <Image
-                source={{ uri: it.photo_url || 'https://images.unsplash.com/photo-1522708323590-d24dbb6b0267?w=200' }}
-                style={styles.likeAvatar}
-              />
-              <View style={styles.likeItemBody}>
-                <Text style={styles.likeItemName} numberOfLines={1}>
-                  {tab === 'received' ? it.counterparty_name : it.title}
-                </Text>
-                <Text style={styles.likeItemDetail} numberOfLines={2}>
-                  {tab === 'received' ? `${it.title} · ${it.address}` : it.address}
-                </Text>
-                <Text style={styles.likeItemHeadline} numberOfLines={3}>
-                  {tab === 'sent'
-                    ? `${likeNotePreview(it.note)} → ${it.counterparty_name}`
-                    : likeNotePreview(it.note)}
-                </Text>
-                {tab === 'received' && it.state === 'pending' ? (
-                  <View style={styles.likeItemActions}>
-                    <TouchableOpacity
-                      style={[styles.likeActionPill, styles.likeActionDecline]}
-                      disabled={busyInterestId === it.interest_id}
-                      onPress={async () => {
-                        setBusyInterestId(it.interest_id);
-                        try {
-                          await postInterestRespond(it.interest_id, { user_id: userId, action: 'decline' });
-                          setRefreshKey(k => k + 1);
-                        } catch (e) {
-                          Alert.alert('Decline', e instanceof Error ? e.message : 'Failed');
-                        } finally {
-                          setBusyInterestId(null);
-                        }
-                      }}
-                    >
-                      <Text style={styles.likeActionPillText}>Decline</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                      style={[styles.likeActionPill, styles.likeActionAccept]}
-                      disabled={busyInterestId === it.interest_id}
-                      onPress={async () => {
-                        setBusyInterestId(it.interest_id);
-                        try {
-                          const r = await postInterestRespond(it.interest_id, {
-                            user_id: userId,
-                            action: 'accept',
-                          });
-                          setRefreshKey(k => k + 1);
-                          if (r.conversation_id && onOpenChat) {
-                            onOpenChat(r.conversation_id);
-                          } else {
-                            Alert.alert('Match', 'Chat is open. Check the Chat tab.');
+        {loading ? null : subTab === 'offers' ? (
+          role === 'seeker' ? (
+            superSent.length === 0 ? (
+              <Text style={styles.likesEmptyApi}>No Super likes sent yet.</Text>
+            ) : (
+              <SuperLikeHighlightList items={superSent} variant="sent" />
+            )
+          ) : superReceived.length === 0 ? (
+            <Text style={styles.likesEmptyApi}>No Super likes received yet.</Text>
+          ) : (
+            <SuperLikeHighlightList items={superReceived} variant="received" />
+          )
+        ) : items.length === 0 ? (
+          <Text style={styles.likesEmptyApi}>No items yet.</Text>
+        ) : (
+          <View style={styles.likesSectionCard}>
+            {items.map((it, index) => (
+              <View
+                key={it.interest_id}
+                style={[styles.likeItemRow, index < items.length - 1 && styles.likeItemRowBorder]}
+              >
+                <Image
+                  source={{ uri: it.photo_url || 'https://images.unsplash.com/photo-1522708323590-d24dbb6b0267?w=200' }}
+                  style={styles.likeAvatar}
+                />
+                <View style={styles.likeItemBody}>
+                  <Text style={styles.likeItemName} numberOfLines={1}>
+                    {isReceivedTab ? it.counterparty_name : it.title}
+                  </Text>
+                  <Text style={styles.likeItemDetail} numberOfLines={2}>
+                    {isReceivedTab ? `${it.title} · ${it.address}` : it.address}
+                  </Text>
+                  <Text style={styles.likeItemHeadline} numberOfLines={3}>
+                    {isReceivedTab
+                      ? likeNotePreview(it.note)
+                      : `${likeNotePreview(it.note)} → ${it.counterparty_name}`}
+                  </Text>
+                  {isReceivedTab && it.state === 'pending' ? (
+                    <View style={styles.likeItemActions}>
+                      <TouchableOpacity
+                        style={[styles.likeActionPill, styles.likeActionDecline]}
+                        disabled={busyInterestId === it.interest_id}
+                        onPress={async () => {
+                          setBusyInterestId(it.interest_id);
+                          try {
+                            await postInterestRespond(it.interest_id, { user_id: userId, action: 'decline' });
+                            setRefreshKey(k => k + 1);
+                          } catch (e) {
+                            Alert.alert('Decline', e instanceof Error ? e.message : 'Failed');
+                          } finally {
+                            setBusyInterestId(null);
                           }
-                        } catch (e) {
-                          Alert.alert('Accept', e instanceof Error ? e.message : 'Failed');
-                        } finally {
-                          setBusyInterestId(null);
-                        }
-                      }}
+                        }}
+                      >
+                        <Text style={styles.likeActionPillText}>Decline</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        style={[styles.likeActionPill, styles.likeActionAccept]}
+                        disabled={busyInterestId === it.interest_id}
+                        onPress={async () => {
+                          setBusyInterestId(it.interest_id);
+                          try {
+                            const r = await postInterestRespond(it.interest_id, {
+                              user_id: userId,
+                              action: 'accept',
+                            });
+                            setRefreshKey(k => k + 1);
+                            if (r.conversation_id && onOpenChat) {
+                              onOpenChat(r.conversation_id);
+                            } else {
+                              Alert.alert('Match', 'Chat is open. Check the Chat tab.');
+                            }
+                          } catch (e) {
+                            Alert.alert('Accept', e instanceof Error ? e.message : 'Failed');
+                          } finally {
+                            setBusyInterestId(null);
+                          }
+                        }}
+                      >
+                        <Text style={[styles.likeActionPillText, styles.likeActionAcceptText]}>Accept</Text>
+                      </TouchableOpacity>
+                    </View>
+                  ) : null}
+                  {isReceivedTab && it.state === 'accepted' && it.conversation_id && onOpenChat ? (
+                    <TouchableOpacity
+                      style={styles.likeOpenChatBtn}
+                      onPress={() => onOpenChat(it.conversation_id!)}
                     >
-                      <Text style={[styles.likeActionPillText, styles.likeActionAcceptText]}>Accept</Text>
+                      <Text style={styles.likeOpenChatBtnText}>Open chat</Text>
                     </TouchableOpacity>
-                  </View>
-                ) : null}
-                {tab === 'received' && it.state === 'accepted' && it.conversation_id && onOpenChat ? (
-                  <TouchableOpacity
-                    style={styles.likeOpenChatBtn}
-                    onPress={() => onOpenChat(it.conversation_id!)}
-                  >
-                    <Text style={styles.likeOpenChatBtnText}>Open chat</Text>
-                  </TouchableOpacity>
-                ) : null}
+                  ) : null}
+                </View>
+                <View style={styles.likeItemBadge}>
+                  <Text style={styles.likeItemBadgeText}>${it.price_monthly}</Text>
+                </View>
               </View>
-              <View style={styles.likeItemBadge}>
-                <Text style={styles.likeItemBadgeText}>${it.price_monthly}</Text>
-              </View>
-            </View>
-          ))}
-        </View>
-      )}
+            ))}
+          </View>
+        )}
       </ScrollView>
       <FullscreenBuckyLoading visible={loading} size={96} swing={26} />
     </>
@@ -1609,8 +1987,24 @@ function ProfileTabWithApi({
   );
 }
 
+const LIKES_MOCK_SUBTITLES: Record<LikeSectionKey, string> = {
+  received: 'People who showed interest in you—newest activity first.',
+  sent: 'Places or people you liked—follow up when you are ready.',
+  offer: 'Offers and standout messages tied to your matches.',
+};
+
 function LikesTabContent({ sections }: { sections: LikeSection[] }) {
-  const totalCount = sections.reduce((sum, section) => sum + section.items.length, 0);
+  const [subTab, setSubTab] = React.useState<LikeSectionKey>('received');
+  const sectionMap = React.useMemo(
+    () => Object.fromEntries(sections.map(s => [s.key, s])) as Record<LikeSectionKey, LikeSection>,
+    [sections],
+  );
+  const active = sectionMap[subTab];
+  const shortTabLabel = (key: LikeSectionKey) => {
+    if (key === 'received') return 'Received';
+    if (key === 'sent') return 'Sent';
+    return 'Offers';
+  };
 
   return (
     <ScrollView
@@ -1618,48 +2012,46 @@ function LikesTabContent({ sections }: { sections: LikeSection[] }) {
       contentContainerStyle={styles.utilityScrollContent}
       showsVerticalScrollIndicator={false}
     >
-      <UtilityTabHeader
-        title="Likes"
-        subtitle="Track interest, keep tabs on outbound likes, and review new offers in one place."
-      />
+      <UtilityTabHeader title="Likes" subtitle={LIKES_MOCK_SUBTITLES[subTab]} />
 
-      <LinearGradient
-        colors={['rgba(255,90,95,0.28)', 'rgba(255,90,95,0.08)']}
-        start={{ x: 0, y: 0 }}
-        end={{ x: 1, y: 1 }}
-        style={styles.likesSummaryCard}
-      >
-        <View style={styles.likesSummaryTextWrap}>
-          <Text style={styles.likesSummaryEyebrow}>Activity Snapshot</Text>
-          <Text style={styles.likesSummaryTitle}>{totalCount} active touchpoints</Text>
-          <Text style={styles.likesSummarySubtitle}>Everything here is grouped so you can scan the newest movement quickly.</Text>
-        </View>
-        <View style={styles.likesSummaryStats}>
-          {sections.map(section => (
-            <View key={section.key} style={styles.likesSummaryStat}>
-              <Text style={styles.likesSummaryStatValue}>{section.items.length}</Text>
-              <Text style={styles.likesSummaryStatLabel}>{section.title}</Text>
-            </View>
-          ))}
-        </View>
-      </LinearGradient>
+      <View style={styles.likesSegmentRow}>
+        {(['received', 'sent', 'offer'] as const).map(key => {
+          const sec = sectionMap[key];
+          const count = sec?.items.length ?? 0;
+          return (
+            <TouchableOpacity
+              key={key}
+              style={[styles.likesSegmentBtn, subTab === key && styles.likesSegmentBtnActive]}
+              onPress={() => setSubTab(key)}
+              activeOpacity={0.85}
+            >
+              <Text
+                style={[styles.likesSegmentLabel, subTab === key && styles.likesSegmentLabelActive]}
+                numberOfLines={2}
+              >
+                {`${shortTabLabel(key)} (${count})`}
+              </Text>
+            </TouchableOpacity>
+          );
+        })}
+      </View>
 
-      {sections.map(section => (
-        <View key={section.key} style={styles.likesSectionCard}>
+      {active ? (
+        <View style={styles.likesSectionCard}>
           <View style={styles.likesSectionHeader}>
-            <Text style={styles.likesSectionTitle}>{section.title}</Text>
+            <Text style={styles.likesSectionTitle}>{active.title}</Text>
             <View style={styles.likesSectionCountBadge}>
-              <Text style={styles.likesSectionCountText}>{section.items.length}</Text>
+              <Text style={styles.likesSectionCountText}>{active.items.length}</Text>
             </View>
           </View>
 
           <View style={styles.likesSectionList}>
-            {section.items.map((item, index) => (
+            {active.items.map((item, index) => (
               <View
                 key={item.id}
                 style={[
                   styles.likeItemRow,
-                  index < section.items.length - 1 && styles.likeItemRowBorder,
+                  index < active.items.length - 1 && styles.likeItemRowBorder,
                 ]}
               >
                 <Image source={{ uri: item.imageUrl }} style={styles.likeAvatar} />
@@ -1682,9 +2074,37 @@ function LikesTabContent({ sections }: { sections: LikeSection[] }) {
             ))}
           </View>
         </View>
-      ))}
+      ) : null}
     </ScrollView>
   );
+}
+
+/** Bottom inset to sit content above the keyboard — uses screenY so we don't double-count vs. tab-bar padding. */
+function useKeyboardBottomInset(): number {
+  const { height: windowHeight } = useWindowDimensions();
+  const [inset, setInset] = React.useState(0);
+  React.useEffect(() => {
+    const show = Keyboard.addListener(
+      Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow',
+      e => {
+        const { screenY, height: kbHeight } = e.endCoordinates;
+        if (Platform.OS === 'ios') {
+          setInset(Math.max(0, windowHeight - screenY));
+        } else {
+          setInset(Math.max(0, kbHeight));
+        }
+      },
+    );
+    const hide = Keyboard.addListener(
+      Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide',
+      () => setInset(0),
+    );
+    return () => {
+      show.remove();
+      hide.remove();
+    };
+  }, [windowHeight]);
+  return inset;
 }
 
 function ChatTabContent({
@@ -1704,6 +2124,7 @@ function ChatTabContent({
 }) {
   const [searchQuery, setSearchQuery] = React.useState('');
   const [isThreadOpen, setIsThreadOpen] = React.useState(false);
+  const kbInset = useKeyboardBottomInset();
 
   const normalizedQuery = searchQuery.trim().toLowerCase();
   const filteredThreads = threads.filter(thread => {
@@ -1829,7 +2250,7 @@ function ChatTabContent({
   }
 
   return (
-    <View style={styles.chatScreen}>
+    <View style={[styles.chatScreen, kbInset > 0 && { paddingBottom: kbInset }]}>
       <View style={styles.chatConversationHeader}>
         <TouchableOpacity
           activeOpacity={0.8}
@@ -1933,6 +2354,7 @@ function ChatTabFromApi({
   const [msgLoading, setMsgLoading] = React.useState(false);
   const [draft, setDraft] = React.useState('');
   const [searchQuery, setSearchQuery] = React.useState('');
+  const kbInset = useKeyboardBottomInset();
 
   React.useEffect(() => {
     let c = false;
@@ -2071,7 +2493,7 @@ function ChatTabFromApi({
   const threadTitle = selected?.other_display_name ?? 'Chat';
 
   return (
-    <View style={styles.chatScreen}>
+    <View style={[styles.chatScreen, kbInset > 0 && { paddingBottom: kbInset }]}>
       <View style={styles.chatConversationHeader}>
         <TouchableOpacity
           activeOpacity={0.8}
@@ -2410,6 +2832,13 @@ export default function App() {
     });
   }, [currentUser]);
 
+  useEffect(() => {
+    if (authScreen !== 'guest-dashboard') return;
+    if (activeTab === 'likes' || activeTab === 'chat') {
+      setActiveTab('explore');
+    }
+  }, [authScreen, activeTab]);
+
   const showPropertyDetail = (property: Property) => {
     setDetailProperty(property);
     setDetailPropertyVisible(true);
@@ -2481,10 +2910,9 @@ export default function App() {
       : 'seeker';
 
   const promptGuestAuth = useCallback(() => {
-    setGuestDeckNonce(n => n + 1);
     Alert.alert(
       'Sign up or log in',
-      'You need an account to keep swiping.',
+      'Create an account to swipe, use Likes and Chat, and save anything to your account.',
       [
         { text: 'Cancel', style: 'cancel' },
         {
@@ -2568,25 +2996,18 @@ export default function App() {
   const likeSections = createLikesSections(mode);
 
   const trySetActiveTab = (t: DashboardTab) => {
-    if (isGuest && t !== 'explore') {
-      Alert.alert(
-        'Log in required',
-        'Sign up or log in to use this feature.',
-        [
-          { text: 'Cancel', style: 'cancel' },
-          {
-            text: 'Log in / Sign up',
-            onPress: () =>
-              setAuthScreen(selectedRoleRef.current === 'seeker' ? 'seeker-auth' : 'owner-auth'),
-          },
-        ],
-      );
+    if (isGuest && (t === 'likes' || t === 'chat')) {
+      promptGuestAuth();
       return;
     }
     setActiveTab(t);
   };
 
   const handleButtonSwipe = (direction: 'left' | 'right') => {
+    if (isGuest) {
+      promptGuestAuth();
+      return;
+    }
     if (topCardRef.current) {
       topCardRef.current.triggerSwipe(direction);
     } else if (direction === 'left') {
@@ -2678,7 +3099,17 @@ export default function App() {
     }
 
     if (activeTab === 'profile') {
-      if (!isGuest && currentUser && USE_API_FEED) {
+      if (isGuest) {
+        return (
+          <GuestProfileTabContent
+            rolePreview={mode === 'seeker' ? 'seeker' : 'host'}
+            onLogInSignUp={() =>
+              setAuthScreen(selectedRoleRef.current === 'seeker' ? 'seeker-auth' : 'owner-auth')
+            }
+          />
+        );
+      }
+      if (currentUser && USE_API_FEED) {
         return (
           <ProfileTabWithApi
             userId={currentUser.id}
@@ -2724,39 +3155,47 @@ export default function App() {
                   key={key}
                   ref={isTopCard ? topCardRef : undefined}
                   index={index}
+                  allowSwipeCommit={isGuest ? () => false : undefined}
+                  onSwipeDenied={isGuest ? promptGuestAuth : undefined}
                   onSwipedLeft={handleSwipedLeft}
                   onSwipedRight={handleSwipedRight}
                 >
                   {mode === 'seeker'
                     ? <PropertyCardContent
                       property={item as Property}
-                      onShowDetail={() => showPropertyDetail(item as Property)}
+                      isDeckTop={isTopCard}
+                      onShowDetail={
+                        isTopCard ? () => showPropertyDetail(item as Property) : undefined
+                      }
                       onNope={isTopCard ? () => handleButtonSwipe('left') : undefined}
                       onLike={
-                        isTopCard && USE_API_FEED && mode === 'seeker' && !isGuest
-                          ? () => {
-                              setLikeCommentDraft('');
-                              setLikeCommentOpen(true);
-                            }
-                          : isTopCard
-                            ? () => handleButtonSwipe('right')
-                            : undefined
+                        isTopCard
+                          ? USE_API_FEED && !isGuest
+                            ? () => {
+                                setLikeCommentDraft('');
+                                setLikeCommentOpen(true);
+                              }
+                            : () => handleButtonSwipe('right')
+                          : undefined
                       }
                       onSuperLike={
-                        isTopCard && isGuest
-                          ? () => promptGuestAuth()
-                          : isTopCard && USE_API_FEED
-                            ? () => {
-                              superLikeListingIdRef.current = (item as Property).id;
-                              setSuperLikeDraft('');
-                              setSuperLikeOpen(true);
-                            }
-                            : undefined
+                        isTopCard
+                          ? isGuest
+                            ? () => promptGuestAuth()
+                            : () => {
+                                superLikeListingIdRef.current = (item as Property).id;
+                                setSuperLikeDraft('');
+                                setSuperLikeOpen(true);
+                              }
+                          : undefined
                       }
                     />
                     : <SeekerCardContent
                       card={item as SeekerCard}
-                      onShowDetail={() => showSeekerDetail(item as SeekerCard)}
+                      isDeckTop={isTopCard}
+                      onShowDetail={
+                        isTopCard ? () => showSeekerDetail(item as SeekerCard) : undefined
+                      }
                       onNope={isTopCard ? () => handleButtonSwipe('left') : undefined}
                       onLike={isTopCard ? () => handleButtonSwipe('right') : undefined}
                     />}
@@ -2786,9 +3225,6 @@ export default function App() {
           showBack={!isGuest && activeTab === 'explore' && mode === 'seeker' && USE_API_FEED}
           onBack={handleFeedBack}
           isGuest={isGuest}
-          onGuestLogin={() =>
-            setAuthScreen(selectedRoleRef.current === 'seeker' ? 'seeker-auth' : 'owner-auth')
-          }
           onGuestBack={() => setAuthScreen('role-select')}
         />
 
@@ -2797,24 +3233,37 @@ export default function App() {
         <View style={styles.tabBar}>
           {tabs.map(tab => {
             const isActive = activeTab === tab.key;
+            const guestLockedTab = isGuest && (tab.key === 'likes' || tab.key === 'chat');
+            const showActiveIcon = isActive && !guestLockedTab;
+            const iconColor = guestLockedTab
+              ? '#555'
+              : isActive
+                ? COLORS.primary
+                : '#A0A0A0';
             return (
               <TouchableOpacity
                 key={tab.key}
-                style={styles.tabBarItem}
+                style={[styles.tabBarItem, guestLockedTab && styles.tabBarItemGuestLocked]}
                 activeOpacity={0.8}
                 onPress={() => trySetActiveTab(tab.key)}
               >
                 <View style={styles.tabBarIconWrap}>
                   <Ionicons
-                    name={isActive ? tab.activeIcon : tab.icon}
+                    name={showActiveIcon ? tab.activeIcon : tab.icon}
                     size={22}
-                    color={isActive ? COLORS.primary : '#A0A0A0'}
+                    color={iconColor}
                   />
                   {tab.key === 'likes' && superLikeInboxCount > 0 && !isGuest ? (
                     <View style={styles.tabBadgeDot} />
                   ) : null}
                 </View>
-                <Text style={[styles.tabBarLabel, isActive && styles.tabBarLabelActive]}>
+                <Text
+                  style={[
+                    styles.tabBarLabel,
+                    showActiveIcon && styles.tabBarLabelActive,
+                    guestLockedTab && styles.tabBarLabelGuestLocked,
+                  ]}
+                >
                   {tab.label}
                 </Text>
               </TouchableOpacity>
@@ -2845,8 +3294,16 @@ export default function App() {
                 onPress={async () => {
                   const text = superLikeDraft.trim();
                   const lid = superLikeListingIdRef.current;
-                  if (!text || !lid || !currentUser?.id) {
+                  if (!text || !lid) {
                     Alert.alert('Super like', 'Please enter a message.');
+                    return;
+                  }
+                  if (!USE_API_FEED || !currentUser?.id) {
+                    Alert.alert(
+                      'Offer (preview)',
+                      'Set EXPO_PUBLIC_API_URL in mobile/.env and restart Expo with npx expo start -c to send real offers.',
+                    );
+                    setSuperLikeOpen(false);
                     return;
                   }
                   try {
@@ -3134,14 +3591,9 @@ const styles = StyleSheet.create({
     position: 'absolute',
     bottom: 110,
     left: 0,
-    right: 0,
+    right: 72,
     paddingHorizontal: 20,
-    gap: 6,
-  },
-  cardInfoDivider: {
-    height: 1,
-    backgroundColor: 'rgba(255,255,255,0.35)',
-    marginVertical: 4,
+    gap: 8,
   },
   cardInfoRow: {
     flexDirection: 'row',
@@ -3341,6 +3793,9 @@ const styles = StyleSheet.create({
     gap: 2,
     minHeight: 48,
   },
+  tabBarItemGuestLocked: {
+    opacity: 0.55,
+  },
   tabBarLabel: {
     fontSize: 11,
     fontWeight: '600',
@@ -3349,6 +3804,9 @@ const styles = StyleSheet.create({
   },
   tabBarLabelActive: {
     color: COLORS.primary,
+  },
+  tabBarLabelGuestLocked: {
+    color: '#666',
   },
 
   tabPlaceholder: {
@@ -4295,15 +4753,52 @@ const styles = StyleSheet.create({
     fontSize: 14,
   },
 
-  headerLoginBtn: {
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderRadius: 16,
+  guestProfileCard: {
+    borderRadius: 28,
+    padding: 22,
+    gap: 14,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.08)',
+    backgroundColor: '#141414',
+  },
+  guestProfileAvatarWrap: {
+    width: 72,
+    height: 72,
+    borderRadius: 36,
+    alignItems: 'center',
+    justifyContent: 'center',
+    alignSelf: 'center',
+    backgroundColor: 'rgba(255,255,255,0.06)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.1)',
+  },
+  guestProfileCardTitle: {
+    fontSize: 20,
+    fontWeight: '800',
+    color: '#FFF',
+    letterSpacing: -0.4,
+    textAlign: 'center',
+  },
+  guestProfileCardBody: {
+    fontSize: 15,
+    lineHeight: 22,
+    color: 'rgba(255,255,255,0.68)',
+    textAlign: 'center',
+  },
+  guestProfilePrimaryBtn: {
+    marginTop: 4,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    paddingVertical: 16,
+    paddingHorizontal: 20,
+    borderRadius: 18,
     backgroundColor: COLORS.primary,
   },
-  headerLoginBtnText: {
+  guestProfilePrimaryBtnText: {
     color: '#FFF',
-    fontSize: 14,
+    fontSize: 16,
     fontWeight: '700',
   },
   tabBarIconWrap: {
