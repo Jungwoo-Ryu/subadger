@@ -43,6 +43,8 @@ import {
 } from './src/data';
 
 import RoleSelectionScreen from './src/screens/RoleSelectionScreen';
+import HouseRulesScreen from './src/screens/HouseRulesScreen';
+import { SplashScreen } from './src/screens/SplashScreen';
 import SeekerAuthScreen from './src/screens/SeekerAuthScreen';
 import OwnerAuthScreen from './src/screens/OwnerAuthScreen';
 import ProfileOnboardingFlow from './src/screens/ProfileOnboardingFlow';
@@ -90,10 +92,11 @@ const USE_API_FEED = Boolean((process.env.EXPO_PUBLIC_API_URL || '').trim());
  * When true: guest preview skips auth prompts and tab/swipe locks (mock deck + Likes/Chat).
  * Branch `demo/full-access`: `true` (teammate demos). Branch `main`: `false`.
  */
-const DEMO_DISABLE_GUEST_BARRIER = true;
+const DEMO_DISABLE_GUEST_BARRIER = false;
 
 // ─── Auth types ──────────────────────────────────────────────────────────────
 type AuthScreen =
+  | 'house-rules'
   | 'role-select'
   | 'guest-dashboard'
   | 'seeker-auth'
@@ -2650,9 +2653,10 @@ function ChatTabFromApi({
 // ─── Main App ─────────────────────────────────────────────────────────────────
 export default function App() {
   // Auth state
-  const [authScreen, setAuthScreen] = useState<AuthScreen>('role-select');
+  const [authScreen, setAuthScreen] = useState<AuthScreen>('house-rules');
   const [currentUser, setCurrentUser] = useState<AuthUser | null>(null);
   const [isAuthReady, setIsAuthReady] = useState(false);
+  const [showSplash, setShowSplash] = useState(true);
   const [isLoggingOut, setIsLoggingOut] = useState(false);
   const selectedRoleRef = useRef<AuthRole>('seeker');
   const bootstrappedProfileUserIdRef = useRef<string | null>(null);
@@ -2808,7 +2812,7 @@ export default function App() {
       }
 
       setCurrentUser(null);
-      setAuthScreen('role-select');
+      setAuthScreen('house-rules');
       setActiveTab('explore');
       setDetailPropertyVisible(false);
       setDetailSeekerVisible(false);
@@ -2886,6 +2890,14 @@ export default function App() {
   }, [completeAuthenticatedEntry]);
 
   useEffect(() => {
+    // Keep splash up for at least a beat after auth check finishes
+    if (isAuthReady) {
+      const timer = setTimeout(() => setShowSplash(false), 1200);
+      return () => clearTimeout(timer);
+    }
+  }, [isAuthReady]);
+
+  useEffect(() => {
     if (!currentUser) {
       bootstrappedProfileUserIdRef.current = null;
       superLikeInAppAlertShownRef.current = false;
@@ -2951,7 +2963,7 @@ export default function App() {
   }, [currentUser, resetDashboardState]);
 
   const handleBackToRoleSelect = () => {
-    setAuthScreen('role-select');
+    setAuthScreen('house-rules');
   };
 
   const handleLogout = async () => {
@@ -3028,12 +3040,25 @@ export default function App() {
   }, [isGuest, currentUser?.id, mode]);
 
   // ─── Auth screens ────────────────────────────────────────────────────────
+  if (showSplash) {
+    return <SplashScreen />;
+  }
+
   if (!isAuthReady) {
     return <LoadingScreen label="Checking your session..." />;
   }
 
+  if (authScreen === 'house-rules') {
+    return <HouseRulesScreen onAgree={() => setAuthScreen('role-select')} />;
+  }
+
   if (authScreen === 'role-select') {
-    return <RoleSelectionScreen onSelectRole={handleSelectRole} />;
+    return (
+      <RoleSelectionScreen 
+        onNext={handleSelectRole}
+        onBack={() => setAuthScreen('house-rules')}
+      />
+    );
   }
 
   if (authScreen === 'seeker-auth') {
