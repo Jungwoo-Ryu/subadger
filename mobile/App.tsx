@@ -158,13 +158,12 @@ function useSwipeDeckActionInterpolation() {
   const { likeProgress, nopeProgress } = ctx;
   const hideOnLikeDrag = likeProgress.interpolate({ inputRange: [0, 1], outputRange: [1, 0] });
   const hideOnNopeDrag = nopeProgress.interpolate({ inputRange: [0, 1], outputRange: [1, 0] });
-  /** X, super, chevron — hidden while swiping right (heart is the focus). */
+  /** X, super — hidden while swiping (detail/chevron uses entrance only). */
   const auxiliaryOpacity = Animated.multiply(hideOnLikeDrag, hideOnNopeDrag);
   return {
     nopeOpacity: hideOnLikeDrag,
     likeOpacity: hideOnNopeDrag,
     superOpacity: auxiliaryOpacity,
-    detailOpacity: auxiliaryOpacity,
   };
 }
 
@@ -610,8 +609,8 @@ function PropertyCardContent({
     deckAnim && isDeckTop ? Animated.multiply(entrance, deckAnim.likeOpacity) : entrance;
   const superOp =
     deckAnim && isDeckTop ? Animated.multiply(entrance, deckAnim.superOpacity) : entrance;
-  const detailOp =
-    deckAnim && isDeckTop ? Animated.multiply(entrance, deckAnim.detailOpacity) : entrance;
+  /** Detail/chevron stays on `entrance` only so it does not vanish with like/nope stamp fades during pans. */
+  const detailOp = entrance;
 
   return (
     <View style={styles.cardInner}>
@@ -627,7 +626,13 @@ function PropertyCardContent({
       </View>
       {isDeckTop && onShowDetail ? (
         <Animated.View style={{ opacity: detailOp }} pointerEvents="box-none">
-          <TouchableOpacity style={styles.detailBtn} onPress={onShowDetail} activeOpacity={0.8}>
+          <TouchableOpacity
+            style={styles.detailBtn}
+            onPress={onShowDetail}
+            activeOpacity={0.8}
+            accessibilityRole="button"
+            accessibilityLabel="More information"
+          >
             <Ionicons name="chevron-up" size={18} color="#FFF" />
           </TouchableOpacity>
         </Animated.View>
@@ -690,8 +695,7 @@ function SeekerCardContent({
     deckAnim && isDeckTop ? Animated.multiply(entrance, deckAnim.nopeOpacity) : entrance;
   const likeOp =
     deckAnim && isDeckTop ? Animated.multiply(entrance, deckAnim.likeOpacity) : entrance;
-  const detailOp =
-    deckAnim && isDeckTop ? Animated.multiply(entrance, deckAnim.detailOpacity) : entrance;
+  const detailOp = entrance;
 
   return (
     <View style={styles.cardInner}>
@@ -705,7 +709,13 @@ function SeekerCardContent({
       </View>
       {isDeckTop && onShowDetail ? (
         <Animated.View style={{ opacity: detailOp }} pointerEvents="box-none">
-          <TouchableOpacity style={styles.detailBtn} onPress={onShowDetail} activeOpacity={0.8}>
+          <TouchableOpacity
+            style={styles.detailBtn}
+            onPress={onShowDetail}
+            activeOpacity={0.8}
+            accessibilityRole="button"
+            accessibilityLabel="More information"
+          >
             <Ionicons name="chevron-up" size={18} color="#FFF" />
           </TouchableOpacity>
         </Animated.View>
@@ -3558,11 +3568,11 @@ const styles = StyleSheet.create({
     gap: 2,
     zIndex: 20,
   },
-  // Tap zones for image navigation (full height)
+  // Tap zones for image navigation — stop above deck controls so detail + actions stay tappable
   tapZoneLeft: {
     position: 'absolute',
     top: 0,
-    bottom: 0,
+    bottom: 160,
     left: 0,
     width: '45%',
     zIndex: 20,
@@ -3570,7 +3580,7 @@ const styles = StyleSheet.create({
   tapZoneRight: {
     position: 'absolute',
     top: 0,
-    bottom: 0,
+    bottom: 160,
     right: 0,
     width: '45%',
     zIndex: 20,
