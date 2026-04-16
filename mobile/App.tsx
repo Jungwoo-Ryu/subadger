@@ -1638,12 +1638,7 @@ function LikesFromApi({
 
               return (
                 <View key={it.interest_id} style={{ borderBottomWidth: 1, borderBottomColor: '#F0F0F0' }}>
-                  <Swipeable 
-                    renderLeftActions={renderLeftActions} 
-                    renderRightActions={renderRightActions}
-                    onSwipeableLeftOpen={isReceivedTab ? executeAccept : undefined}
-                    onSwipeableRightOpen={executeDecline}
-                  >
+                  <Swipeable renderLeftActions={renderLeftActions} renderRightActions={renderRightActions}>
                     <View style={[styles.likeItemRow, { backgroundColor: '#FFF' }]}>
                       {/* Left: Avatar */}
                       <View style={{ width: 50, height: 50, borderRadius: 25, backgroundColor: '#CCC', marginRight: 16, overflow: 'hidden' }}>
@@ -2131,12 +2126,7 @@ function LikesTabContent({ sections, onChatNavigate }: { sections: LikeSection[]
 
             return (
               <View key={it.id} style={{ borderBottomWidth: 1, borderBottomColor: '#F0F0F0' }}>
-                <Swipeable 
-                  renderLeftActions={renderLeftActions} 
-                  renderRightActions={renderRightActions}
-                  onSwipeableLeftOpen={isReceivedTab ? executeAccept : undefined}
-                  onSwipeableRightOpen={executeDecline}
-                >
+                <Swipeable renderLeftActions={renderLeftActions} renderRightActions={renderRightActions}>
                   <View style={[styles.likeItemRow, { backgroundColor: '#FFF' }]}>
                     {/* Left: Avatar */}
                     <View style={{ width: 50, height: 50, borderRadius: 25, backgroundColor: '#CCC', marginRight: 16, overflow: 'hidden' }}>
