@@ -32,6 +32,7 @@ import {
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
+import { GestureHandlerRootView, Swipeable } from 'react-native-gesture-handler';
 import MapView, { Marker } from 'react-native-maps';
 
 import {
@@ -104,7 +105,7 @@ type AuthScreen =
   | 'profile-onboarding'
   | 'dashboard';
 type DashboardTab = 'explore' | 'likes' | 'chat' | 'profile';
-type LikeSectionKey = 'received' | 'sent' | 'offer';
+type LikeSectionKey = 'received' | 'sent';
 
 interface LikeActivityItem {
   id: string;
@@ -215,7 +216,7 @@ function DeckNopeSwipeButton({
         style={deckActionEmphasisStyles.touch}
       >
         <View style={deckActionEmphasisStyles.circleClip}>
-          <View style={[StyleSheet.absoluteFill, { backgroundColor: '#1A1A1A' }]} />
+          <View style={[StyleSheet.absoluteFill, { backgroundColor: '#FFFFFF' }]} />
           <Animated.View
             pointerEvents="none"
             style={[
@@ -274,7 +275,7 @@ function DeckLikeSwipeButton({
         style={deckActionEmphasisStyles.touch}
       >
         <View style={deckActionEmphasisStyles.circleClip}>
-          <View style={[StyleSheet.absoluteFill, { backgroundColor: '#1A1A1A' }]} />
+          <View style={[StyleSheet.absoluteFill, { backgroundColor: '#FFFFFF' }]} />
           <Animated.View
             pointerEvents="none"
             style={[
@@ -315,6 +316,11 @@ const deckActionEmphasisStyles = StyleSheet.create({
   touch: {
     width: DECK_ACTION_SIZE,
     height: DECK_ACTION_SIZE,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.15,
+    shadowRadius: 8,
+    elevation: 4,
   },
   circleClip: {
     width: DECK_ACTION_SIZE,
@@ -376,19 +382,6 @@ function createLikesSections(mode: AppMode): LikeSection[] {
           timeLabel: index === 0 ? 'Yesterday' : '2d ago',
         })),
       },
-      {
-        key: 'offer',
-        title: 'Sent offers',
-        items: MOCK_PROPERTIES.slice(0, 2).map((property, index) => ({
-          id: `offer-${property.id}`,
-          name: HOST_CONTACTS[index],
-          imageUrl: property.imageUrls[0],
-          headline: `${HOST_CONTACTS[index]} sent you a stay offer`,
-          detail: `${property.apartmentName} · Move-in window closes Apr ${14 + index}`,
-          badge: 'Offer ready',
-          timeLabel: index === 0 ? '5m ago' : '3h ago',
-        })),
-      },
     ];
   }
 
@@ -417,19 +410,6 @@ function createLikesSections(mode: AppMode): LikeSection[] {
         detail: `${card.user.bio ?? 'Open to summer sublets'} · Budget ${card.profile.targetPriceMin}-${card.profile.targetPriceMax}/mo`,
         badge: 'Profile saved',
         timeLabel: index === 0 ? 'Yesterday' : '3d ago',
-      })),
-    },
-    {
-      key: 'offer',
-      title: 'Received offers',
-      items: MOCK_SEEKER_CARDS.slice(0, 2).map((card, index) => ({
-        id: `offer-${card.user.id}`,
-        name: card.user.name,
-        imageUrl: card.user.imageUrls[0],
-        headline: `${card.user.name} sent a sublet offer`,
-        detail: `Ready to review terms for ${formatDate(card.profile.desiredStartDate)} to ${formatDate(card.profile.desiredEndDate)}`,
-        badge: 'Review now',
-        timeLabel: index === 0 ? '9m ago' : '2h ago',
       })),
     },
   ];
@@ -617,8 +597,8 @@ function PropertyCardContent({
   return (
     <View style={styles.cardInner}>
       <ImageCarousel imageUrls={property.imageUrls} />
-      <LinearGradient colors={['rgba(0,0,0,0.6)', 'rgba(0,0,0,0)']} style={styles.topGradient} />
-      <LinearGradient colors={['transparent', 'rgba(0,0,0,0.4)', 'rgba(0,0,0,0.8)', '#000']} style={styles.gradient} />
+      <LinearGradient colors={['rgba(255,255,255,0.85)', 'rgba(255,255,255,0)']} style={styles.topGradient} />
+      <LinearGradient colors={['transparent', 'rgba(255,255,255,0.7)', 'rgba(255,255,255,0.95)', '#FFFFFF']} style={styles.gradient} />
       <View style={styles.cardInfo}>
         <Text style={styles.apartmentName} numberOfLines={2}>{property.apartmentName}</Text>
         <Text style={styles.address} numberOfLines={2}>
@@ -701,8 +681,8 @@ function SeekerCardContent({
   return (
     <View style={styles.cardInner}>
       <ImageCarousel imageUrls={user.imageUrls} />
-      <LinearGradient colors={['rgba(0,0,0,0.6)', 'rgba(0,0,0,0)']} style={styles.topGradient} />
-      <LinearGradient colors={['transparent', 'rgba(0,0,0,0.4)', 'rgba(0,0,0,0.8)', '#000']} style={styles.gradient} />
+      <LinearGradient colors={['rgba(255,255,255,0.85)', 'rgba(255,255,255,0)']} style={styles.topGradient} />
+      <LinearGradient colors={['transparent', 'rgba(255,255,255,0.7)', 'rgba(255,255,255,0.95)', '#FFFFFF']} style={styles.gradient} />
       <View style={styles.cardInfo}>
         <Text style={styles.apartmentName} numberOfLines={1}>{user.name}</Text>
         {user.bio ? <Text style={styles.address} numberOfLines={1}>{user.bio}</Text> : null}
@@ -1339,24 +1319,9 @@ function DashboardHeader({
           <Ionicons name="chevron-back" size={26} color="#FFF" />
         </TouchableOpacity>
       ) : (
-        <View style={styles.headerIconBtn} />
+        <View style={{ width: 38 }} />
       )}
-      {!isGuest ? (
-        <TouchableOpacity
-          style={styles.logoutBtn}
-          onPress={onLogout}
-          activeOpacity={0.8}
-          disabled={isLoggingOut}
-        >
-          {isLoggingOut ? (
-            <ActivityIndicator color="#FFF" size="small" />
-          ) : (
-            <Ionicons name="log-out-outline" size={20} color="#FFF" />
-          )}
-        </TouchableOpacity>
-      ) : (
-        <View style={styles.headerIconBtn} />
-      )}
+      <View style={{ width: 38 }} />
     </View>
   );
 }
@@ -1409,11 +1374,29 @@ function TabPlaceholder({ title, subtitle, icon }: { title: string; subtitle: st
   );
 }
 
-function UtilityTabHeader({ title, subtitle }: { title: string; subtitle: string }) {
+function UtilityTabHeader({ 
+  title, 
+  subtitle,
+  alignLeft,
+  rightIcon
+}: { 
+  title: string; 
+  subtitle?: string;
+  alignLeft?: boolean;
+  rightIcon?: React.ReactNode;
+}) {
+  if (alignLeft) {
+    return (
+      <View style={[styles.utilityHeader, { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 24, paddingTop: Platform.OS === 'android' ? 12 : 0 }]}>
+        <Text style={[styles.utilityHeaderTitle, { textAlign: 'left', marginBottom: 0 }]}>{title}</Text>
+        {rightIcon && <View>{rightIcon}</View>}
+      </View>
+    );
+  }
   return (
     <View style={styles.utilityHeader}>
       <Text style={styles.utilityHeaderTitle}>{title}</Text>
-      <Text style={styles.utilityHeaderSubtitle}>{subtitle}</Text>
+      {subtitle ? <Text style={styles.utilityHeaderSubtitle}>{subtitle}</Text> : null}
     </View>
   );
 }
@@ -1482,7 +1465,7 @@ function likeNotePreview(note: string | null | undefined): string {
   return t.length > 0 ? t : 'Like without a message';
 }
 
-type LikesSubTabKey = 'received' | 'sent' | 'offers';
+type LikesSubTabKey = 'received' | 'sent';
 
 function LikesFromApi({
   userId,
@@ -1501,6 +1484,7 @@ function LikesFromApi({
   const [loading, setLoading] = React.useState(true);
   const [refreshKey, setRefreshKey] = React.useState(0);
   const [busyInterestId, setBusyInterestId] = React.useState<string | null>(null);
+  const [hiddenIds, setHiddenIds] = React.useState<Set<string>>(new Set());
 
   React.useEffect(() => {
     let cancelled = false;
@@ -1535,7 +1519,6 @@ function LikesFromApi({
     };
   }, [userId, refreshKey]);
 
-  const offerCount = role === 'seeker' ? superSent.length : superReceived.length;
   const likesHeaderSubtitle: Record<LikesSubTabKey, string> = {
     received:
       role === 'seeker'
@@ -1545,10 +1528,6 @@ function LikesFromApi({
       role === 'seeker'
         ? 'Listings you liked. Hosts may respond from their inbox.'
         : 'Seekers you liked. They can accept from their Likes tab.',
-    offers:
-      role === 'seeker'
-        ? 'Super likes include a message and stand out to hosts.'
-        : 'Super likes from seekers include a message about your listing.',
   };
 
   const items = subTab === 'received' ? receivedItems : sentItems;
@@ -1561,7 +1540,7 @@ function LikesFromApi({
         contentContainerStyle={styles.utilityScrollContent}
         showsVerticalScrollIndicator={false}
       >
-        <UtilityTabHeader title="Likes" subtitle={likesHeaderSubtitle[subTab]} />
+        <UtilityTabHeader title="Like" alignLeft rightIcon={<Ionicons name="notifications-outline" size={24} color="#000" />} />
         <View style={styles.likesSegmentRow}>
           <TouchableOpacity
             style={[styles.likesSegmentBtn, subTab === 'received' && styles.likesSegmentBtnActive]}
@@ -1571,7 +1550,7 @@ function LikesFromApi({
               style={[styles.likesSegmentLabel, subTab === 'received' && styles.likesSegmentLabelActive]}
               numberOfLines={1}
             >
-              Received{!loading ? ` (${receivedItems.length})` : ''}
+              Likes
             </Text>
           </TouchableOpacity>
           <TouchableOpacity
@@ -1582,22 +1561,11 @@ function LikesFromApi({
               style={[styles.likesSegmentLabel, subTab === 'sent' && styles.likesSegmentLabelActive]}
               numberOfLines={1}
             >
-              Sent{!loading ? ` (${sentItems.length})` : ''}
-            </Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.likesSegmentBtn, subTab === 'offers' && styles.likesSegmentBtnActive]}
-            onPress={() => setSubTab('offers')}
-          >
-            <Text
-              style={[styles.likesSegmentLabel, subTab === 'offers' && styles.likesSegmentLabelActive]}
-              numberOfLines={1}
-            >
-              Offers{!loading ? ` (${offerCount})` : ''}
+              Likes sent
             </Text>
           </TouchableOpacity>
         </View>
-        {loading ? null : subTab === 'offers' ? (
+        {loading ? null : false ? (
           role === 'seeker' ? (
             superSent.length === 0 ? (
               <Text style={styles.likesEmptyApi}>No Super likes sent yet.</Text>
@@ -1613,87 +1581,94 @@ function LikesFromApi({
           <Text style={styles.likesEmptyApi}>No items yet.</Text>
         ) : (
           <View style={styles.likesSectionCard}>
-            {items.map((it, index) => (
-              <View
-                key={it.interest_id}
-                style={[styles.likeItemRow, index < items.length - 1 && styles.likeItemRowBorder]}
-              >
-                <Image
-                  source={{ uri: it.photo_url || 'https://images.unsplash.com/photo-1522708323590-d24dbb6b0267?w=200' }}
-                  style={styles.likeAvatar}
-                />
-                <View style={styles.likeItemBody}>
-                  <Text style={styles.likeItemName} numberOfLines={1}>
-                    {isReceivedTab ? it.counterparty_name : it.title}
-                  </Text>
-                  <Text style={styles.likeItemDetail} numberOfLines={2}>
-                    {isReceivedTab ? `${it.title} · ${it.address}` : it.address}
-                  </Text>
-                  <Text style={styles.likeItemHeadline} numberOfLines={3}>
-                    {isReceivedTab
-                      ? likeNotePreview(it.note)
-                      : `${likeNotePreview(it.note)} → ${it.counterparty_name}`}
-                  </Text>
-                  {isReceivedTab && it.state === 'pending' ? (
-                    <View style={styles.likeItemActions}>
-                      <TouchableOpacity
-                        style={[styles.likeActionPill, styles.likeActionDecline]}
-                        disabled={busyInterestId === it.interest_id}
-                        onPress={async () => {
-                          setBusyInterestId(it.interest_id);
-                          try {
-                            await postInterestRespond(it.interest_id, { user_id: userId, action: 'decline' });
-                            setRefreshKey(k => k + 1);
-                          } catch (e) {
-                            Alert.alert('Decline', e instanceof Error ? e.message : 'Failed');
-                          } finally {
-                            setBusyInterestId(null);
-                          }
-                        }}
-                      >
-                        <Text style={styles.likeActionPillText}>Decline</Text>
-                      </TouchableOpacity>
-                      <TouchableOpacity
-                        style={[styles.likeActionPill, styles.likeActionAccept]}
-                        disabled={busyInterestId === it.interest_id}
-                        onPress={async () => {
-                          setBusyInterestId(it.interest_id);
-                          try {
-                            const r = await postInterestRespond(it.interest_id, {
-                              user_id: userId,
-                              action: 'accept',
-                            });
-                            setRefreshKey(k => k + 1);
-                            if (r.conversation_id && onOpenChat) {
-                              onOpenChat(r.conversation_id);
-                            } else {
-                              Alert.alert('Match', 'Chat is open. Check the Chat tab.');
-                            }
-                          } catch (e) {
-                            Alert.alert('Accept', e instanceof Error ? e.message : 'Failed');
-                          } finally {
-                            setBusyInterestId(null);
-                          }
-                        }}
-                      >
-                        <Text style={[styles.likeActionPillText, styles.likeActionAcceptText]}>Accept</Text>
+            {items.map((it, index) => {
+              const executeAccept = async () => {
+                setHiddenIds(prev => new Set(prev).add(it.interest_id));
+                setBusyInterestId(it.interest_id);
+                try {
+                  const r = await postInterestRespond(it.interest_id, { user_id: userId, action: 'accept' });
+                  setRefreshKey(k => k + 1);
+                  if (r.conversation_id && onOpenChat) onOpenChat(r.conversation_id);
+                  else if (onOpenChat) onOpenChat('mock-id');
+                } catch(e) {} finally { setBusyInterestId(null); }
+              };
+
+              const executeDecline = async () => {
+                setHiddenIds(prev => new Set(prev).add(it.interest_id));
+                setBusyInterestId(it.interest_id);
+                try {
+                  await postInterestRespond(it.interest_id, { user_id: userId, action: 'decline' });
+                  setRefreshKey(k => k + 1);
+                } catch(e) {} finally { setBusyInterestId(null); }
+              };
+
+              const renderLeftActions = () => {
+                if (isReceivedTab) {
+                  return (
+                    <View style={{ flexDirection: 'row' }}>
+                      <TouchableOpacity style={{ backgroundColor: '#32D74B', justifyContent: 'center', alignItems: 'center', width: 75 }} onPress={executeAccept}>
+                        <Ionicons name="checkmark-circle-outline" size={32} color="#FFF" />
                       </TouchableOpacity>
                     </View>
-                  ) : null}
-                  {isReceivedTab && it.state === 'accepted' && it.conversation_id && onOpenChat ? (
-                    <TouchableOpacity
-                      style={styles.likeOpenChatBtn}
-                      onPress={() => onOpenChat(it.conversation_id!)}
-                    >
-                      <Text style={styles.likeOpenChatBtnText}>Open chat</Text>
+                  );
+                }
+                return null;
+              };
+
+              const renderRightActions = () => {
+                if (isReceivedTab) {
+                  return (
+                    <View style={{ flexDirection: 'row' }}>
+                      <TouchableOpacity style={{ backgroundColor: '#FF3B30', justifyContent: 'center', alignItems: 'center', width: 75 }} onPress={executeDecline}>
+                        <Ionicons name="close-outline" size={32} color="#FFF" />
+                      </TouchableOpacity>
+                    </View>
+                  );
+                }
+                return (
+                  <View style={{ flexDirection: 'row' }}>
+                    <TouchableOpacity style={{ backgroundColor: '#FF3B30', justifyContent: 'center', alignItems: 'center', width: 75 }} onPress={executeDecline}>
+                      <Ionicons name="close-outline" size={32} color="#FFF" />
                     </TouchableOpacity>
-                  ) : null}
+                  </View>
+                );
+              };
+
+              if (hiddenIds.has(it.interest_id)) return null;
+
+              return (
+                <View key={it.interest_id} style={{ borderBottomWidth: 1, borderBottomColor: '#F0F0F0' }}>
+                  <Swipeable 
+                    renderLeftActions={renderLeftActions} 
+                    renderRightActions={renderRightActions}
+                    onSwipeableLeftOpen={isReceivedTab ? executeAccept : undefined}
+                    onSwipeableRightOpen={executeDecline}
+                  >
+                    <View style={[styles.likeItemRow, { backgroundColor: '#FFF' }]}>
+                      {/* Left: Avatar */}
+                      <View style={{ width: 50, height: 50, borderRadius: 25, backgroundColor: '#CCC', marginRight: 16, overflow: 'hidden' }}>
+                        <Image source={{ uri: it.photo_url || 'https://images.unsplash.com/photo-1522708323590-d24dbb6b0267?w=200' }} style={{ width: '100%', height: '100%' }} />
+                      </View>
+                      
+                      {/* Center: Texts */}
+                      <View style={{ flex: 1, justifyContent: 'center' }}>
+                        <Text style={{ fontSize: 13, color: '#888', marginBottom: 2 }} numberOfLines={1}>
+                          {isReceivedTab ? it.counterparty_name : it.address}
+                        </Text>
+                        <Text style={{ fontSize: 16, fontWeight: '700', color: '#000', marginBottom: 2 }} numberOfLines={1}>
+                          {isReceivedTab ? it.title : it.title}
+                        </Text>
+                      </View>
+
+                      {/* Right: Time */}
+                      <View style={{ alignItems: 'flex-end', justifyContent: 'center', width: 60 }}>
+                        <Text style={{ fontSize: 11, color: '#888', position: 'absolute', top: 0, right: 0 }}>2:30PM</Text>
+                      </View>
+                    </View>
+                  </Swipeable>
                 </View>
-                <View style={styles.likeItemBadge}>
-                  <Text style={styles.likeItemBadgeText}>${it.price_monthly}</Text>
-                </View>
-              </View>
-            ))}
+              );
+            })}
           </View>
         )}
       </ScrollView>
@@ -2064,11 +2039,11 @@ function ProfileTabWithApi({
 const LIKES_MOCK_SUBTITLES: Record<LikeSectionKey, string> = {
   received: 'People who showed interest in you—newest activity first.',
   sent: 'Places or people you liked—follow up when you are ready.',
-  offer: 'Offers and standout messages tied to your matches.',
 };
 
-function LikesTabContent({ sections }: { sections: LikeSection[] }) {
+function LikesTabContent({ sections, onChatNavigate }: { sections: LikeSection[]; onChatNavigate?: () => void }) {
   const [subTab, setSubTab] = React.useState<LikeSectionKey>('received');
+  const [hiddenIds, setHiddenIds] = React.useState<Set<string>>(new Set());
   const sectionMap = React.useMemo(
     () => Object.fromEntries(sections.map(s => [s.key, s])) as Record<LikeSectionKey, LikeSection>,
     [sections],
@@ -2076,8 +2051,7 @@ function LikesTabContent({ sections }: { sections: LikeSection[] }) {
   const active = sectionMap[subTab];
   const shortTabLabel = (key: LikeSectionKey) => {
     if (key === 'received') return 'Received';
-    if (key === 'sent') return 'Sent';
-    return 'Offers';
+    return 'Sent';
   };
 
   return (
@@ -2086,12 +2060,10 @@ function LikesTabContent({ sections }: { sections: LikeSection[] }) {
       contentContainerStyle={styles.utilityScrollContent}
       showsVerticalScrollIndicator={false}
     >
-      <UtilityTabHeader title="Likes" subtitle={LIKES_MOCK_SUBTITLES[subTab]} />
+      <UtilityTabHeader title="Like" alignLeft rightIcon={<Ionicons name="notifications-outline" size={24} color="#000" />} />
 
       <View style={styles.likesSegmentRow}>
-        {(['received', 'sent', 'offer'] as const).map(key => {
-          const sec = sectionMap[key];
-          const count = sec?.items.length ?? 0;
+        {(['received', 'sent'] as const).map(key => {
           return (
             <TouchableOpacity
               key={key}
@@ -2103,7 +2075,7 @@ function LikesTabContent({ sections }: { sections: LikeSection[] }) {
                 style={[styles.likesSegmentLabel, subTab === key && styles.likesSegmentLabelActive]}
                 numberOfLines={2}
               >
-                {`${shortTabLabel(key)} (${count})`}
+                {key === 'received' ? 'Likes' : 'Likes sent'}
               </Text>
             </TouchableOpacity>
           );
@@ -2111,42 +2083,85 @@ function LikesTabContent({ sections }: { sections: LikeSection[] }) {
       </View>
 
       {active ? (
-        <View style={styles.likesSectionCard}>
-          <View style={styles.likesSectionHeader}>
-            <Text style={styles.likesSectionTitle}>{active.title}</Text>
-            <View style={styles.likesSectionCountBadge}>
-              <Text style={styles.likesSectionCountText}>{active.items.length}</Text>
-            </View>
-          </View>
+        <View>
+          {active.items.map((it, index) => {
+            const isReceivedTab = subTab === 'received';
+            const executeAccept = () => {
+              setHiddenIds(prev => new Set(prev).add(it.id));
+              if (onChatNavigate) onChatNavigate();
+            };
 
-          <View style={styles.likesSectionList}>
-            {active.items.map((item, index) => (
-              <View
-                key={item.id}
-                style={[
-                  styles.likeItemRow,
-                  index < active.items.length - 1 && styles.likeItemRowBorder,
-                ]}
-              >
-                <Image source={{ uri: item.imageUrl }} style={styles.likeAvatar} />
-                <View style={styles.likeItemBody}>
-                  <View style={styles.likeItemTitleRow}>
-                    <Text style={styles.likeItemName} numberOfLines={1}>
-                      {item.name}
-                    </Text>
-                    <Text style={styles.likeItemTime}>{item.timeLabel}</Text>
+            const executeDecline = () => {
+              setHiddenIds(prev => new Set(prev).add(it.id));
+            };
+
+            const renderLeftActions = () => {
+              if (isReceivedTab) {
+                return (
+                  <View style={{ flexDirection: 'row' }}>
+                    <TouchableOpacity style={{ backgroundColor: '#32D74B', justifyContent: 'center', alignItems: 'center', width: 75 }} onPress={executeAccept}>
+                      <Ionicons name="checkmark-circle-outline" size={32} color="#FFF" />
+                    </TouchableOpacity>
                   </View>
-                  <Text style={styles.likeItemHeadline}>{item.headline}</Text>
-                  <Text style={styles.likeItemDetail} numberOfLines={2}>
-                    {item.detail}
-                  </Text>
+                );
+              }
+              return null;
+            };
+
+            const renderRightActions = () => {
+              if (isReceivedTab) {
+                return (
+                  <View style={{ flexDirection: 'row' }}>
+                    <TouchableOpacity style={{ backgroundColor: '#FF3B30', justifyContent: 'center', alignItems: 'center', width: 75 }} onPress={executeDecline}>
+                      <Ionicons name="close-outline" size={32} color="#FFF" />
+                    </TouchableOpacity>
+                  </View>
+                );
+              }
+              return (
+                <View style={{ flexDirection: 'row' }}>
+                  <TouchableOpacity style={{ backgroundColor: '#FF3B30', justifyContent: 'center', alignItems: 'center', width: 75 }} onPress={executeDecline}>
+                    <Ionicons name="close-outline" size={32} color="#FFF" />
+                  </TouchableOpacity>
                 </View>
-                <View style={styles.likeItemBadge}>
-                  <Text style={styles.likeItemBadgeText}>{item.badge}</Text>
-                </View>
+              );
+            };
+
+            if (hiddenIds.has(it.id)) return null;
+
+            return (
+              <View key={it.id} style={{ borderBottomWidth: 1, borderBottomColor: '#F0F0F0' }}>
+                <Swipeable 
+                  renderLeftActions={renderLeftActions} 
+                  renderRightActions={renderRightActions}
+                  onSwipeableLeftOpen={isReceivedTab ? executeAccept : undefined}
+                  onSwipeableRightOpen={executeDecline}
+                >
+                  <View style={[styles.likeItemRow, { backgroundColor: '#FFF' }]}>
+                    {/* Left: Avatar */}
+                    <View style={{ width: 50, height: 50, borderRadius: 25, backgroundColor: '#CCC', marginRight: 16, overflow: 'hidden' }}>
+                      <Image source={{ uri: it.imageUrl || 'https://images.unsplash.com/photo-1522708323590-d24dbb6b0267?w=200' }} style={{ width: '100%', height: '100%' }} />
+                    </View>
+                    
+                    {/* Center: Texts */}
+                    <View style={{ flex: 1, justifyContent: 'center' }}>
+                      <Text style={{ fontSize: 13, color: '#888', marginBottom: 2 }} numberOfLines={1}>
+                        {it.name}
+                      </Text>
+                      <Text style={{ fontSize: 16, fontWeight: '700', color: '#000', marginBottom: 2 }} numberOfLines={1}>
+                        Rent post title
+                      </Text>
+                    </View>
+
+                    {/* Right: Time */}
+                    <View style={{ alignItems: 'flex-end', justifyContent: 'center', width: 60 }}>
+                      <Text style={{ fontSize: 11, color: '#888', position: 'absolute', top: 0, right: 0 }}>{it.timeLabel || "2:30PM"}</Text>
+                    </View>
+                  </View>
+                </Swipeable>
               </View>
-            ))}
-          </View>
+            );
+          })}
         </View>
       ) : null}
     </ScrollView>
@@ -2228,23 +2243,18 @@ function ChatTabContent({
   if (!isThreadOpen) {
     return (
       <View style={styles.chatScreen}>
-        <View style={styles.chatInboxHeader}>
-          <View>
-            <Text style={styles.chatInboxTitle}>Chats</Text>
-            <Text style={styles.chatInboxSubtitle}>{threads.length} conversations</Text>
-          </View>
-          <View style={styles.chatInboxAction}>
-            <Ionicons name="create-outline" size={18} color="#FFF" />
-          </View>
-        </View>
+        <UtilityTabHeader 
+          title="Chats" 
+          alignLeft 
+        />
 
         <View style={styles.chatSearchBar}>
-          <Ionicons name="search" size={16} color="rgba(255,255,255,0.55)" />
+          <Ionicons name="search" size={16} color="#A0A0A0" />
           <TextInput
             value={searchQuery}
             onChangeText={setSearchQuery}
             placeholder="Search"
-            placeholderTextColor="rgba(255,255,255,0.4)"
+            placeholderTextColor="#A0A0A0"
             style={styles.chatSearchInput}
           />
           {searchQuery.length > 0 && (
@@ -2253,7 +2263,7 @@ function ChatTabContent({
               onPress={() => setSearchQuery('')}
               style={styles.chatSearchClear}
             >
-              <Ionicons name="close" size={14} color="#FFF" />
+              <Ionicons name="close" size={14} color="#A0A0A0" />
             </TouchableOpacity>
           )}
         </View>
@@ -2517,19 +2527,17 @@ function ChatTabFromApi({
   if (!threadOpen) {
     return (
       <View style={styles.chatScreen}>
-        <View style={styles.chatInboxHeader}>
-          <View>
-            <Text style={styles.chatInboxTitle}>Chats</Text>
-            <Text style={styles.chatInboxSubtitle}>{list.length} conversations</Text>
-          </View>
-        </View>
+        <UtilityTabHeader 
+          title="Chats" 
+          alignLeft 
+        />
         <View style={styles.chatSearchBar}>
-          <Ionicons name="search" size={16} color="rgba(255,255,255,0.55)" />
+          <Ionicons name="search" size={16} color="#A0A0A0" />
           <TextInput
             value={searchQuery}
             onChangeText={setSearchQuery}
             placeholder="Search"
-            placeholderTextColor="rgba(255,255,255,0.4)"
+            placeholderTextColor="#A0A0A0"
             style={styles.chatSearchInput}
           />
         </View>
@@ -3041,53 +3049,61 @@ export default function App() {
 
   // ─── Auth screens ────────────────────────────────────────────────────────
   if (showSplash) {
-    return <SplashScreen />;
+    return <GestureHandlerRootView style={{ flex: 1 }}><SplashScreen /></GestureHandlerRootView>;
   }
 
   if (!isAuthReady) {
-    return <LoadingScreen label="Checking your session..." />;
+    return <GestureHandlerRootView style={{ flex: 1 }}><LoadingScreen label="Checking your session..." /></GestureHandlerRootView>;
   }
 
   if (authScreen === 'house-rules') {
-    return <HouseRulesScreen onAgree={() => setAuthScreen('role-select')} />;
+    return <GestureHandlerRootView style={{ flex: 1 }}><HouseRulesScreen onAgree={() => setAuthScreen('role-select')} /></GestureHandlerRootView>;
   }
 
   if (authScreen === 'role-select') {
     return (
-      <RoleSelectionScreen 
-        onNext={handleSelectRole}
-        onBack={() => setAuthScreen('house-rules')}
-      />
+      <GestureHandlerRootView style={{ flex: 1 }}>
+        <RoleSelectionScreen 
+          onNext={handleSelectRole}
+          onBack={() => setAuthScreen('house-rules')}
+        />
+      </GestureHandlerRootView>
     );
   }
 
   if (authScreen === 'seeker-auth') {
     return (
-      <SeekerAuthScreen
-        onAuthenticated={handleAuthenticated}
-        onBack={handleBackToRoleSelect}
-      />
+      <GestureHandlerRootView style={{ flex: 1 }}>
+        <SeekerAuthScreen
+          onAuthenticated={handleAuthenticated}
+          onBack={handleBackToRoleSelect}
+        />
+      </GestureHandlerRootView>
     );
   }
 
   if (authScreen === 'owner-auth') {
     return (
-      <OwnerAuthScreen
-        onAuthenticated={handleAuthenticated}
-        onBack={handleBackToRoleSelect}
-      />
+      <GestureHandlerRootView style={{ flex: 1 }}>
+        <OwnerAuthScreen
+          onAuthenticated={handleAuthenticated}
+          onBack={handleBackToRoleSelect}
+        />
+      </GestureHandlerRootView>
     );
   }
 
   if (authScreen === 'profile-onboarding' && currentUser) {
     return (
-      <ProfileOnboardingFlow user={currentUser} onFinished={handleProfileOnboardingFinished} />
+      <GestureHandlerRootView style={{ flex: 1 }}>
+        <ProfileOnboardingFlow user={currentUser} onFinished={handleProfileOnboardingFinished} />
+      </GestureHandlerRootView>
     );
   }
 
   // ─── Dashboard (logged-in or guest preview) ──────────────────────────────
   if (!currentUser && authScreen !== 'guest-dashboard') {
-    return <LoadingScreen label="Loading your account..." />;
+    return <GestureHandlerRootView style={{ flex: 1 }}><LoadingScreen label="Loading your account..." /></GestureHandlerRootView>;
   }
 
   const currentDeck = mode === 'seeker' ? properties : seekers;
@@ -3171,7 +3187,7 @@ export default function App() {
           />
         );
       }
-      return <LikesTabContent sections={likeSections} />;
+      return <LikesTabContent sections={likeSections} onChatNavigate={() => trySetActiveTab('chat')} />;
     }
 
     if (activeTab === 'chat') {
@@ -3314,8 +3330,8 @@ export default function App() {
   ];
 
   return (
-    <View style={{ flex: 1, backgroundColor: '#000' }}>
-      <StatusBar barStyle="light-content" backgroundColor="#000" />
+    <GestureHandlerRootView style={{ flex: 1 }}>
+      <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
       <View style={styles.container}>
         <DashboardHeader
           onLogout={handleLogout}
@@ -3547,7 +3563,7 @@ export default function App() {
         visible={detailSeekerVisible}
         onClose={hideSeekerDetail}
       />
-    </View>
+    </GestureHandlerRootView>
   );
 }
 
@@ -3555,7 +3571,7 @@ export default function App() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#000',
+    backgroundColor: '#FFFFFF',
   },
   loadingScreen: {
     flex: 1,
@@ -3564,7 +3580,7 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   loadingScreenDim: {
-    backgroundColor: 'rgba(0,0,0,0.42)',
+    backgroundColor: 'rgba(0,0,0,0.2)',
   },
   loadingText: {
     fontSize: 15,
@@ -3574,7 +3590,7 @@ const styles = StyleSheet.create({
   loadingTextOnDim: {
     fontSize: 15,
     fontWeight: '600',
-    color: 'rgba(255,255,255,0.92)',
+    color: '#111',
     textAlign: 'center',
     paddingHorizontal: 32,
   },
@@ -3629,7 +3645,7 @@ const styles = StyleSheet.create({
     borderBottomLeftRadius: 32,
     borderBottomRightRadius: 32,
     overflow: 'hidden',
-    backgroundColor: '#000',
+    backgroundColor: '#FFFFFF',
   },
   cardInner: { flex: 1 },
   cardImage: {
@@ -3702,12 +3718,12 @@ const styles = StyleSheet.create({
   apartmentName: {
     fontSize: 24,
     fontWeight: '800',
-    color: COLORS.white,
+    color: '#000000',
     letterSpacing: -0.3,
   },
   address: {
     fontSize: 14,
-    color: 'rgba(255,255,255,0.85)',
+    color: '#444444',
     fontWeight: '500',
   },
   priceRow: {
@@ -3718,14 +3734,14 @@ const styles = StyleSheet.create({
   },
   originalPrice: {
     fontSize: 16,
-    color: 'rgba(255,255,255,0.7)',
+    color: '#444',
     textDecorationLine: 'line-through',
     fontWeight: '600',
   },
   subletPrice: {
-    fontSize: 22,
+    fontSize: 26,
     fontWeight: '800',
-    color: '#4ADE80',
+    color: '#FF3B30',
     marginTop: 4,
   },
   saveBadge: {
@@ -3744,7 +3760,7 @@ const styles = StyleSheet.create({
   },
   utilityText: {
     fontSize: 12,
-    color: 'rgba(255,255,255,0.6)',
+    color: '#666666',
   },
   dateRow: {
     flexDirection: 'row',
@@ -3753,7 +3769,7 @@ const styles = StyleSheet.create({
   },
   dateText: {
     fontSize: 14,
-    color: 'rgba(255,255,255,0.9)',
+    color: '#333333',
     fontWeight: '500',
   },
 
@@ -3766,7 +3782,7 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     paddingHorizontal: 8,
     paddingVertical: 3,
-    backgroundColor: 'rgba(255,255,255,0.15)',
+    backgroundColor: '#D6D6D6',
   },
   genderTagText: {
     fontSize: 12,
@@ -3842,7 +3858,7 @@ const styles = StyleSheet.create({
     borderRadius: 38,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#1A1A1A',
+    backgroundColor: '#FFFFFF',
     borderWidth: 2,
   },
   actionNope: {
@@ -3881,7 +3897,7 @@ const styles = StyleSheet.create({
     bottom: Platform.OS === 'ios' ? 20 : 10,
     zIndex: 30,
     flexDirection: 'row',
-    backgroundColor: '#1A1A1A',
+    backgroundColor: '#FFFFFF',
     borderRadius: 28,
     paddingTop: 8,
     paddingBottom: Platform.OS === 'ios' ? 12 : 10,
@@ -3974,13 +3990,13 @@ const styles = StyleSheet.create({
   utilityHeaderTitle: {
     fontSize: 34,
     fontWeight: '800',
-    color: '#FFF',
+    color: '#000',
     letterSpacing: -0.8,
   },
   utilityHeaderSubtitle: {
     fontSize: 15,
     lineHeight: 22,
-    color: 'rgba(255,255,255,0.7)',
+    color: '#444',
     maxWidth: '92%',
   },
 
@@ -3990,7 +4006,7 @@ const styles = StyleSheet.create({
     gap: 18,
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.08)',
-    backgroundColor: '#141414',
+    backgroundColor: '#FFFFFF',
   },
   likesSummaryTextWrap: {
     gap: 6,
@@ -4005,7 +4021,7 @@ const styles = StyleSheet.create({
   likesSummaryTitle: {
     fontSize: 24,
     fontWeight: '800',
-    color: '#FFF',
+    color: '#000',
     letterSpacing: -0.5,
   },
   likesSummarySubtitle: {
@@ -4023,12 +4039,12 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     paddingHorizontal: 12,
     borderRadius: 18,
-    backgroundColor: 'rgba(255,255,255,0.06)',
+    backgroundColor: '#F2F2F2',
   },
   likesSummaryStatValue: {
     fontSize: 22,
     fontWeight: '800',
-    color: '#FFF',
+    color: '#000',
   },
   likesSummaryStatLabel: {
     flex: 1,
@@ -4039,12 +4055,7 @@ const styles = StyleSheet.create({
     marginLeft: 16,
   },
   likesSectionCard: {
-    backgroundColor: '#101010',
-    borderRadius: 24,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.07)',
-    padding: 16,
-    gap: 12,
+    backgroundColor: '#FFFFFF',
   },
   likesSectionHeader: {
     flexDirection: 'row',
@@ -4054,7 +4065,7 @@ const styles = StyleSheet.create({
   likesSectionTitle: {
     fontSize: 18,
     fontWeight: '800',
-    color: '#FFF',
+    color: '#000',
     letterSpacing: -0.3,
   },
   likesSectionCountBadge: {
@@ -4068,12 +4079,16 @@ const styles = StyleSheet.create({
   likesSectionCountText: {
     fontSize: 13,
     fontWeight: '800',
-    color: '#FFF',
+    color: '#000',
   },
   likesSectionList: {
     gap: 2,
   },
   likeItemRow: {
+    flexDirection: 'row',
+    paddingVertical: 16,
+    paddingHorizontal: 24,
+    //
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
@@ -4087,7 +4102,7 @@ const styles = StyleSheet.create({
     width: 58,
     height: 58,
     borderRadius: 18,
-    backgroundColor: '#2A2A2A',
+    backgroundColor: '#FFFFFF',
   },
   likeItemBody: {
     flex: 1,
@@ -4103,7 +4118,7 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: 15,
     fontWeight: '700',
-    color: '#FFF',
+    color: '#000',
   },
   likeItemTime: {
     fontSize: 11,
@@ -4126,7 +4141,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
     paddingVertical: 8,
     borderRadius: 14,
-    backgroundColor: 'rgba(255,255,255,0.08)',
+    backgroundColor: '#EAEAEA',
   },
   likeItemBadgeText: {
     fontSize: 11,
@@ -4147,7 +4162,7 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(255,255,255,0.2)',
   },
   likeActionDecline: {
-    backgroundColor: 'rgba(255,255,255,0.06)',
+    backgroundColor: '#F2F2F2',
   },
   likeActionAccept: {
     backgroundColor: COLORS.primary,
@@ -4156,10 +4171,10 @@ const styles = StyleSheet.create({
   likeActionPillText: {
     fontSize: 14,
     fontWeight: '700',
-    color: '#EEE',
+    color: '#333',
   },
   likeActionAcceptText: {
-    color: '#FFF',
+    color: '#000',
   },
   likeOpenChatBtn: {
     marginTop: 8,
@@ -4190,7 +4205,7 @@ const styles = StyleSheet.create({
   chatInboxTitle: {
     fontSize: 30,
     fontWeight: '800',
-    color: '#FFF',
+    color: '#000',
     letterSpacing: -0.6,
   },
   chatInboxSubtitle: {
@@ -4204,25 +4219,22 @@ const styles = StyleSheet.create({
     borderRadius: 19,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: 'rgba(255,255,255,0.08)',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.08)',
+    backgroundColor: '#F5F5F5',
   },
   chatSearchBar: {
     height: 48,
     borderRadius: 16,
     paddingHorizontal: 14,
+    marginTop: 16,
     marginBottom: 12,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
-    backgroundColor: '#111111',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.08)',
+    backgroundColor: '#F5F5F5',
   },
   chatSearchInput: {
     flex: 1,
-    color: '#FFF',
+    color: '#000',
     fontSize: 15,
     paddingVertical: 0,
   },
@@ -4232,7 +4244,7 @@ const styles = StyleSheet.create({
     borderRadius: 11,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: 'rgba(255,255,255,0.12)',
+    backgroundColor: '#E0E0E0',
   },
   chatList: {
     flex: 1,
@@ -4249,7 +4261,7 @@ const styles = StyleSheet.create({
   chatEmptySearchTitle: {
     fontSize: 18,
     fontWeight: '700',
-    color: '#FFF',
+    color: '#000',
   },
   chatEmptySearchSubtitle: {
     fontSize: 14,
@@ -4264,10 +4276,10 @@ const styles = StyleSheet.create({
     paddingHorizontal: 6,
     paddingVertical: 14,
     borderBottomWidth: 1,
-    borderBottomColor: 'rgba(255,255,255,0.06)',
+    borderBottomColor: '#F0F0F0',
   },
   chatListRowActive: {
-    backgroundColor: 'rgba(255,255,255,0.04)',
+    backgroundColor: '#F8F8F8',
     borderRadius: 18,
     borderBottomColor: 'transparent',
   },
@@ -4275,7 +4287,7 @@ const styles = StyleSheet.create({
     width: 56,
     height: 56,
     borderRadius: 28,
-    backgroundColor: '#242424',
+    backgroundColor: '#FFFFFF',
   },
   chatListTextWrap: {
     flex: 1,
@@ -4291,16 +4303,16 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: 16,
     fontWeight: '700',
-    color: '#FFF',
+    color: '#000',
   },
   chatListTime: {
     fontSize: 12,
     fontWeight: '600',
-    color: 'rgba(255,255,255,0.42)',
+    color: '#8A8A8A',
   },
   chatListPreview: {
     fontSize: 14,
-    color: 'rgba(255,255,255,0.78)',
+    color: '#666666',
   },
   chatListMetaRow: {
     flexDirection: 'row',
@@ -4325,7 +4337,7 @@ const styles = StyleSheet.create({
   chatListUnreadText: {
     fontSize: 11,
     fontWeight: '800',
-    color: '#FFF',
+    color: '#000',
   },
   chatListChevron: {
     marginLeft: 8,
@@ -4342,7 +4354,7 @@ const styles = StyleSheet.create({
     borderRadius: 19,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: 'rgba(255,255,255,0.08)',
+    backgroundColor: '#EAEAEA',
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.08)',
   },
@@ -4350,7 +4362,7 @@ const styles = StyleSheet.create({
     width: 42,
     height: 42,
     borderRadius: 21,
-    backgroundColor: '#242424',
+    backgroundColor: '#FFFFFF',
   },
   chatConversationHeaderText: {
     flex: 1,
@@ -4359,11 +4371,11 @@ const styles = StyleSheet.create({
   chatConversationTitle: {
     fontSize: 17,
     fontWeight: '700',
-    color: '#FFF',
+    color: '#000',
   },
   chatConversationStatus: {
     fontSize: 12,
-    color: 'rgba(255,255,255,0.52)',
+    color: '#8A8A8A',
   },
   chatConversationMessages: {
     flex: 1,
@@ -4393,23 +4405,23 @@ const styles = StyleSheet.create({
     borderBottomRightRadius: 6,
   },
   chatBubbleOther: {
-    backgroundColor: '#171717',
+    backgroundColor: '#F8F8F8',
     borderBottomLeftRadius: 6,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.06)',
+    borderColor: '#EAEAEA',
   },
   chatBubbleText: {
     fontSize: 14,
     lineHeight: 20,
-    color: '#F4F4F4',
+    color: '#000000',
   },
   chatBubbleTextSelf: {
-    color: '#FFF',
+    color: '#000000',
   },
   chatMessageTime: {
     fontSize: 11,
     fontWeight: '600',
-    color: 'rgba(255,255,255,0.4)',
+    color: '#999',
     paddingHorizontal: 4,
   },
   chatMessageTimeSelf: {
@@ -4422,7 +4434,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
     paddingVertical: 8,
     borderRadius: 22,
-    backgroundColor: '#111111',
+    backgroundColor: '#FFFFFF',
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.08)',
     marginTop: 10,
@@ -4432,7 +4444,7 @@ const styles = StyleSheet.create({
     minHeight: 40,
     paddingHorizontal: 8,
     paddingVertical: 10,
-    color: '#FFF',
+    color: '#000',
     fontSize: 15,
   },
   chatComposerSend: {
@@ -4445,12 +4457,12 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
   },
   chatComposerSendDisabled: {
-    backgroundColor: 'rgba(255,255,255,0.08)',
+    backgroundColor: '#EAEAEA',
   },
   chatComposerSendText: {
     fontSize: 14,
     fontWeight: '700',
-    color: '#FFF',
+    color: '#000',
   },
   chatComposerSendTextDisabled: {
     color: 'rgba(255,255,255,0.45)',
@@ -4477,7 +4489,7 @@ const styles = StyleSheet.create({
   // Detail Modal
   modalOverlay: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(0,0,0,0.5)',
+    backgroundColor: 'rgba(0,0,0,0.3)',
     justifyContent: 'flex-end',
   },
   modalOverlayTouch: {
@@ -4542,7 +4554,7 @@ const styles = StyleSheet.create({
   },
   modalAddress: {
     fontSize: 14,
-    color: '#888',
+    color: '#8A8A8A',
     marginTop: 4,
     marginBottom: 10,
   },
@@ -4569,7 +4581,7 @@ const styles = StyleSheet.create({
   modalInfoLabel: {
     fontSize: 10,
     fontWeight: '600',
-    color: '#AAA',
+    color: '#666',
     textTransform: 'uppercase',
     letterSpacing: 0.5,
     marginTop: 2,
@@ -4589,7 +4601,7 @@ const styles = StyleSheet.create({
   },
   modalInfoSub: {
     fontSize: 11,
-    color: '#AAA',
+    color: '#666',
   },
   modalInfoSubHighlight: {
     fontSize: 12,
@@ -4655,45 +4667,47 @@ const styles = StyleSheet.create({
   },
   likesSegmentRow: {
     flexDirection: 'row',
-    gap: 8,
-    marginBottom: 16,
+    justifyContent: 'center',
+    paddingHorizontal: 24,
+    paddingTop: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F0F0F0',
+    marginBottom: 0,
   },
   likesSegmentBtn: {
-    flex: 1,
-    paddingVertical: 12,
-    borderRadius: 12,
-    backgroundColor: '#1E1E1E',
+    paddingBottom: 12,
+    width: 170,
     alignItems: 'center',
   },
   likesSegmentBtnActive: {
-    backgroundColor: 'rgba(255,90,95,0.25)',
-    borderWidth: 1,
-    borderColor: COLORS.primary,
+    borderBottomWidth: 3,
+    borderBottomColor: '#000',
   },
   likesSegmentLabel: {
-    fontSize: 13,
+    fontSize: 16,
+    color: '#8A8A8A',
     fontWeight: '600',
-    color: '#AAA',
     textAlign: 'center',
   },
   likesSegmentLabelActive: {
-    color: '#FFF',
+    color: '#000',
+    fontWeight: 'bold',
   },
   likesEmptyApi: {
     marginTop: 20,
     fontSize: 14,
-    color: '#888',
+    color: '#8A8A8A',
     textAlign: 'center',
   },
   profileCompletenessCard: {
-    backgroundColor: '#1A1A1A',
+    backgroundColor: '#FFFFFF',
     borderRadius: 16,
     padding: 20,
     marginTop: 8,
   },
   profileCompletenessTitle: {
     fontSize: 14,
-    color: '#AAA',
+    color: '#666',
     fontWeight: '600',
   },
   profileCompletenessPct: {
@@ -4705,31 +4719,31 @@ const styles = StyleSheet.create({
   profileCompletenessMissing: {
     marginTop: 12,
     fontSize: 14,
-    color: '#CCC',
+    color: '#444',
     lineHeight: 20,
   },
   profileFormSectionTitle: {
     fontSize: 17,
     fontWeight: '800',
-    color: '#FFF',
+    color: '#000',
     marginTop: 22,
     marginBottom: 10,
   },
   profileFieldLabel: {
     fontSize: 13,
     fontWeight: '600',
-    color: 'rgba(255,255,255,0.55)',
+    color: '#777',
     marginBottom: 6,
   },
   profileFieldInput: {
-    backgroundColor: '#151515',
+    backgroundColor: '#FFFFFF',
     borderRadius: 12,
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.12)',
     paddingHorizontal: 14,
     paddingVertical: 12,
     fontSize: 15,
-    color: '#FFF',
+    color: '#000',
   },
   profileFieldInputMultiline: {
     minHeight: 88,
@@ -4771,7 +4785,7 @@ const styles = StyleSheet.create({
   profileSaveBtnText: {
     fontSize: 16,
     fontWeight: '800',
-    color: '#FFF',
+    color: '#000',
   },
   superLikeOverlay: {
     flex: 1,
@@ -4780,14 +4794,14 @@ const styles = StyleSheet.create({
     paddingHorizontal: 24,
   },
   superLikeSheet: {
-    backgroundColor: '#1A1A1A',
+    backgroundColor: '#FFFFFF',
     borderRadius: 16,
     padding: 20,
   },
   superLikeTitle: {
     fontSize: 18,
     fontWeight: '700',
-    color: '#FFF',
+    color: '#000',
   },
   superLikeHint: {
     fontSize: 13,
@@ -4799,8 +4813,8 @@ const styles = StyleSheet.create({
     minHeight: 100,
     borderRadius: 12,
     padding: 12,
-    backgroundColor: '#111',
-    color: '#FFF',
+    backgroundColor: '#FFFFFF',
+    color: '#000',
     textAlignVertical: 'top',
   },
   superLikeActions: {
@@ -4814,7 +4828,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
   },
   superLikeCancelText: {
-    color: '#AAA',
+    color: '#666',
     fontSize: 16,
     fontWeight: '600',
   },
@@ -4825,29 +4839,29 @@ const styles = StyleSheet.create({
     borderRadius: 12,
   },
   superLikeSendText: {
-    color: '#FFF',
+    color: '#000',
     fontSize: 16,
     fontWeight: '700',
   },
   filterSheet: {
-    backgroundColor: '#1A1A1A',
+    backgroundColor: '#FFFFFF',
     borderRadius: 16,
     padding: 20,
     maxHeight: SCREEN_HEIGHT * 0.85,
   },
   filterLabel: {
-    color: '#AAA',
+    color: '#666',
     fontSize: 12,
     marginTop: 10,
     fontWeight: '600',
   },
   filterField: {
     marginTop: 6,
-    backgroundColor: '#111',
+    backgroundColor: '#FFFFFF',
     borderRadius: 10,
     paddingHorizontal: 12,
     paddingVertical: 10,
-    color: '#FFF',
+    color: '#000',
     fontSize: 15,
   },
   filterReset: {
@@ -4855,7 +4869,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   filterResetText: {
-    color: '#888',
+    color: '#8A8A8A',
     fontSize: 14,
   },
 
@@ -4865,7 +4879,7 @@ const styles = StyleSheet.create({
     gap: 14,
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.08)',
-    backgroundColor: '#141414',
+    backgroundColor: '#FFFFFF',
   },
   guestProfileAvatarWrap: {
     width: 72,
@@ -4874,14 +4888,14 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     alignSelf: 'center',
-    backgroundColor: 'rgba(255,255,255,0.06)',
+    backgroundColor: '#F2F2F2',
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.1)',
+    borderColor: '#E5E5E5',
   },
   guestProfileCardTitle: {
     fontSize: 20,
     fontWeight: '800',
-    color: '#FFF',
+    color: '#000',
     letterSpacing: -0.4,
     textAlign: 'center',
   },
@@ -4903,7 +4917,7 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.primary,
   },
   guestProfilePrimaryBtnText: {
-    color: '#FFF',
+    color: '#000',
     fontSize: 16,
     fontWeight: '700',
   },
@@ -4943,22 +4957,22 @@ const styles = StyleSheet.create({
   superLikeHighlightListing: {
     fontSize: 17,
     fontWeight: '700',
-    color: '#FFF',
+    color: '#000',
   },
   superLikeHighlightFrom: {
     fontSize: 13,
-    color: 'rgba(255,255,255,0.75)',
+    color: '#555',
     marginTop: 4,
   },
   superLikeHighlightBody: {
     fontSize: 14,
-    color: '#EEE',
+    color: '#333',
     marginTop: 8,
     lineHeight: 20,
   },
   superLikeHighlightMeta: {
     fontSize: 12,
-    color: 'rgba(255,255,255,0.55)',
+    color: '#777',
     marginTop: 8,
   },
 });
