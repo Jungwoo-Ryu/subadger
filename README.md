@@ -60,3 +60,7 @@ Onboarding
 
 <img src="https://github.com/user-attachments/assets/6b674569-d75c-412e-8f13-e98a47a7f009" width="300"/>
 <img src="https://github.com/user-attachments/assets/b4298446-6084-4eef-8f4b-154a88f496d9" width="300"/>
+
+Start Page
+
+<img src="https://github.com/user-attachments/assets/dd2c009b-b540-4d2a-ab2c-0edff663aa23" width="300"/>
