@@ -55,3 +55,8 @@ npx expo start
 ```bash
 docker build -t subadger:local .
 ```
+## UIUX Design
+Onboarding
+
+<img src="https://github.com/user-attachments/assets/6b674569-d75c-412e-8f13-e98a47a7f009" width="300"/>
+<img src="https://github.com/user-attachments/assets/b4298446-6084-4eef-8f4b-154a88f496d9" width="300"/>
