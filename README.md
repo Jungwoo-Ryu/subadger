@@ -65,6 +65,16 @@ Start Page
 
 <img src="https://github.com/user-attachments/assets/dd2c009b-b540-4d2a-ab2c-0edff663aa23" width="300"/>
 
+
+Login Page
+<img width="2466" height="1218" alt="Group 9074" src="https://github.com/user-attachments/assets/96100c30-b678-47d5-aa9b-f3efce31b1a7" />
+
+
+
 Swip Page
 
 <img width="2490" height="874" alt="swip_page" src="https://github.com/user-attachments/assets/b3b4e9da-c2ff-4d10-8901-57a62b19729a" />
+
+Like Page
+
+<img width="2525" height="2633" alt="Group 9074-3" src="https://github.com/user-attachments/assets/183f73d1-7188-446d-8f27-223c2e4ca9e5" />
