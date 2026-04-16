@@ -64,3 +64,7 @@ Onboarding
 Start Page
 
 <img src="https://github.com/user-attachments/assets/dd2c009b-b540-4d2a-ab2c-0edff663aa23" width="300"/>
+
+Swip Page
+
+<img width="2490" height="874" alt="swip_page" src="https://github.com/user-attachments/assets/b3b4e9da-c2ff-4d10-8901-57a62b19729a" />
