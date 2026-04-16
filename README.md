@@ -78,3 +78,11 @@ Swip Page
 Like Page
 
 <img width="2525" height="2633" alt="Group 9074-3" src="https://github.com/user-attachments/assets/183f73d1-7188-446d-8f27-223c2e4ca9e5" />
+
+Chat Page
+
+<img width="1296" height="1278" alt="Group 9075" src="https://github.com/user-attachments/assets/7eae650a-3151-4ff3-b8f9-d83e03face72" />
+
+My Page
+
+<img width="2015" height="1410" alt="Group 9076" src="https://github.com/user-attachments/assets/ec891703-e6ae-400d-afc6-39a896f32012" />
