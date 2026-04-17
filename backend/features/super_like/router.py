@@ -7,9 +7,25 @@ from fastapi import APIRouter, HTTPException, Query
 
 from db import connection
 from listing_sql import LISTING_DISPLAY_TITLE
-from schemas import SuperLikeListItem, SuperLikeListResponse, SuperLikeRequest, SuperLikeResponse
+from schemas import SuperLikeListItem, SuperLikeListResponse, SuperLikeRequest, SuperLikeResponse, SuperLikesRemainingResponse
 
 router = APIRouter(prefix="/v1", tags=["super-like"])
+
+DAILY_SUPER_LIKE_LIMIT = 3
+
+
+def _count_super_likes_today(cur, user_id: str) -> int:
+    cur.execute(
+        """
+        SELECT COUNT(*) AS cnt
+        FROM public.super_likes
+        WHERE sender_id = %s::uuid
+          AND (created_at AT TIME ZONE 'UTC')::date = (NOW() AT TIME ZONE 'UTC')::date
+        """,
+        (user_id,),
+    )
+    row = cur.fetchone()
+    return int(row["cnt"]) if row else 0
 
 _super_likes_lock = threading.Lock()
 _super_likes_ready: bool | None = None
@@ -80,14 +96,12 @@ def _fetch_super_like_rows(cur, user_id: str, *, received: bool) -> list:
 
 @router.post("/swipe/super-like", response_model=SuperLikeResponse)
 def super_like(body: SuperLikeRequest):
-    """One super-like per sender per UTC day (DB unique index)."""
+    """Up to 3 super-likes per sender per UTC day, enforced by count check."""
     with connection() as conn:
         try:
             with conn.cursor() as cur:
                 cur.execute(
-                    """
-                    SELECT host_id FROM listings WHERE id = %s AND status = 'active'
-                    """,
+                    "SELECT host_id FROM listings WHERE id = %s AND status = 'active'",
                     (str(body.listing_id),),
                 )
                 row = cur.fetchone()
@@ -101,10 +115,17 @@ def super_like(body: SuperLikeRequest):
                     return SuperLikeResponse(
                         ok=False,
                         message=(
-                            "Super likes are not available until the database migration is applied "
-                            "(public.super_likes). Run supabase/migrations/20260411200000_production_catchup_meeting_backlog.sql "
+                            "Super likes are not available until the database migration is applied. "
+                            "Run supabase/migrations/20260411200000_production_catchup_meeting_backlog.sql "
                             "in the SQL Editor, then redeploy."
                         ),
+                    )
+
+                used_today = _count_super_likes_today(cur, str(body.user_id))
+                if used_today >= DAILY_SUPER_LIKE_LIMIT:
+                    return SuperLikeResponse(
+                        ok=False,
+                        message=f"You've used all {DAILY_SUPER_LIKE_LIMIT} Super Likes for today. They reset at UTC midnight.",
                     )
 
                 try:
@@ -118,21 +139,8 @@ def super_like(body: SuperLikeRequest):
                 except psycopg.errors.UndefinedTable:
                     conn.rollback()
                     _invalidate_super_likes_cache()
-                    return SuperLikeResponse(
-                        ok=False,
-                        message=(
-                            "Super likes table is missing. Apply "
-                            "supabase/migrations/20260411200000_production_catchup_meeting_backlog.sql "
-                            "in Supabase SQL Editor, then retry."
-                        ),
-                    )
+                    return SuperLikeResponse(ok=False, message="Super likes table is missing. Apply the migration and retry.")
                 conn.commit()
-        except psycopg.errors.UniqueViolation:
-            conn.rollback()
-            return SuperLikeResponse(
-                ok=False,
-                message="Super like already used today (resets at UTC midnight).",
-            )
         except HTTPException:
             conn.rollback()
             raise
@@ -140,6 +148,21 @@ def super_like(body: SuperLikeRequest):
             conn.rollback()
             raise
     return SuperLikeResponse(ok=True, message=None)
+
+
+@router.get("/super-likes/remaining", response_model=SuperLikesRemainingResponse)
+def super_likes_remaining(user_id: UUID = Query(...)):
+    """How many super likes the user has left today (resets UTC midnight)."""
+    with connection() as conn:
+        with conn.cursor() as cur:
+            if not _super_likes_table_exists(cur):
+                return SuperLikesRemainingResponse(remaining=DAILY_SUPER_LIKE_LIMIT, used=0, limit=DAILY_SUPER_LIKE_LIMIT)
+            used = _count_super_likes_today(cur, str(user_id))
+    return SuperLikesRemainingResponse(
+        remaining=max(0, DAILY_SUPER_LIKE_LIMIT - used),
+        used=used,
+        limit=DAILY_SUPER_LIKE_LIMIT,
+    )
 
 
 @router.get("/super-likes/received", response_model=SuperLikeListResponse)

@@ -23,15 +23,15 @@ const { width } = Dimensions.get('window');
 const RULES = [
   {
     title: 'Be honest',
-    description: 'Description. bbbbbbbbbbbbbbbbbbbbbb',
+    description: 'Use real dates, rent, room details, and photos so people can trust what they see before they swipe.',
   },
   {
     title: 'Do not ghost',
-    description: 'Description. bbbbbbbbbbbbbbbbbbbbbb',
+    description: 'If your plans change, decline or reply. People are timing internships, move-ins, and lease transfers around these conversations.',
   },
   {
-    title: 'Be friendly',
-    description: 'Description. bbbbbbbbbbbbbbbbbbbbbb',
+    title: 'Be respectful',
+    description: 'Keep messages friendly, stay serious about subleasing, and use likes plus chat to move toward a real handoff.',
   },
 ];
 
@@ -76,7 +76,7 @@ export default function HouseRulesScreen({ onAgree, onClose }: Props) {
         style={{ opacity: fadeAnim, transform: [{ translateY: slideAnim }] }}
       >
         <Text style={styles.title}>Welcome to{'\n'}SwipeLease</Text>
-        <Text style={styles.subtitle}>Please follow these House{'\n'}Rules</Text>
+        <Text style={styles.subtitle}>Please follow these House{'\n'}Rules to keep matches useful.</Text>
 
         <View style={styles.rulesContainer}>
           {RULES.map((rule, index) => (

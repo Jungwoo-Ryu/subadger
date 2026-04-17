@@ -106,6 +106,12 @@ class SuperLikeListResponse(BaseModel):
     items: list[SuperLikeListItem]
 
 
+class SuperLikesRemainingResponse(BaseModel):
+    remaining: int
+    used: int
+    limit: int
+
+
 # --- Feed stack (back) ----------------------------------------------------------
 class FeedStackPushRequest(BaseModel):
     user_id: UUID

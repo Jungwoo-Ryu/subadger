@@ -68,7 +68,11 @@ export function mapFeedListingToProperty(f: FeedListingDto): Property {
     availableEndDate: f.end_date,
     preferredGender: asGender(f.gender_pref),
     description: f.neighborhood ? `${f.neighborhood}\n${f.utilities || ''}` : f.utilities || '',
-    imageUrls: f.photos.length ? f.photos : ['https://images.unsplash.com/photo-1522708323590-d24dbb6b0267?w=800&q=80'],
+    imageUrls: f.photos.length
+      ? f.photos
+      : [
+          'https://www.hubmadison.com/wp-content/uploads/2026/04/home-floorplans-new_0003_03_437_N_Frances_St_Madison_WI_53703-Living_room-MW5A5700-Noelle-Tarpey.webp',
+        ],
     coordinates: {
       latitude: f.lat ?? 43.0731,
       longitude: f.lng ?? -89.4012,
@@ -231,6 +235,12 @@ export async function fetchSuperLikesReceived(userId: string) {
 export async function fetchSuperLikesSent(userId: string) {
   return http<{ items: SuperLikeItemDto[] }>(
     `/v1/super-likes/sent?user_id=${encodeURIComponent(userId)}`,
+  );
+}
+
+export async function fetchSuperLikesRemaining(userId: string) {
+  return http<{ remaining: number; used: number; limit: number }>(
+    `/v1/super-likes/remaining?user_id=${encodeURIComponent(userId)}`,
   );
 }
 

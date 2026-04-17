@@ -10,6 +10,7 @@ export interface AuthUser {
   name: string;
   email: string;
   role: AuthRole;
+  createdAt?: string;
 }
 
 interface SignInParams {
@@ -67,6 +68,7 @@ export function mapSupabaseUser(user: User, fallbackRole: AuthRole): AuthUser {
     name: String(getDisplayName(user)),
     email: user.email ?? '',
     role: roleFromMetadata(metadataRole, fallbackRole),
+    createdAt: user.created_at,
   };
 }
 
